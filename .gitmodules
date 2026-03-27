@@ -1,0 +1,3 @@
+[submodule "models/test-cde"]
+	path = models/test-cde
+	url = https://github.com/bruadam/test-cde
