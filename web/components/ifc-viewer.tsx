@@ -14,6 +14,7 @@ import {
   Box, Sun,
 } from "lucide-react";
 import { STATUS_META, PRIORITY_META } from "@/lib/types";
+import { toast } from "sonner";
 
 const PRIORITY_COLORS: Record<string, number> = {
   urgent: 0xe24b4a,
@@ -361,7 +362,7 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     if (!ifcLoader || !world) return;
 
     const toLoad = models.filter(
-      (m) => !loadedFiles.has(m.filename) && m.filename.startsWith("Building-")
+      (m) => !loadedFiles.has(m.filename)
     );
     if (toLoad.length === 0) return;
 
@@ -483,6 +484,8 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
   useEffect(() => {
     const { highlightGroup, fragments, world } = refs.current;
     if (!highlightGroup) return;
+    // Don't attempt highlights until models are fully loaded
+    if (loadingState !== "done") return;
 
     // Cancel any in-flight highlight from a previous selection
     let cancelled = false;
@@ -566,6 +569,21 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         }
 
         if (cancelled) return;
+
+        // Warn user if elements could not be found in any loaded model
+        const foundA = Object.keys(clashMapA).length > 0;
+        const foundB = Object.keys(clashMapB).length > 0;
+        if (selectedClash.ifcGuidA && !foundA && selectedClash.ifcGuidB && !foundB) {
+          toast.error("Could not find either clash element in the loaded models");
+        } else if (selectedClash.ifcGuidA && !foundA) {
+          toast.warning("Could not find element A in the loaded models", {
+            description: selectedClash.ifcGuidA,
+          });
+        } else if (selectedClash.ifcGuidB && !foundB) {
+          toast.warning("Could not find element B in the loaded models", {
+            description: selectedClash.ifcGuidB,
+          });
+        }
 
         // Ghost all models, then restore opacity for clashing elements
         for (const model of fragments!.core.models.list.values()) {
@@ -740,19 +758,28 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
           }
         }
 
-        // Fetch parsed elements from our DB; match by GlobalId then fall back to first
-        const res = await fetch(
-          `/api/models/${encodeURIComponent(hitModelId)}/parse`
-        );
-        if (res.ok) {
-          type ElemData = { expressId: number; globalId: string; ifcType: string; name: string | null; properties: Record<string, string> };
-          const data: { elements: ElemData[] } = await res.json();
+        // Fetch element info by GlobalId (lightweight) instead of loading all model elements
+        type ElemData = { expressId: number; globalId: string; ifcType: string; name: string | null; properties: Record<string, string> };
+        let elem: ElemData | undefined;
 
-          const elem = (resolvedGlobalId
-            ? data.elements.find((el) => el.globalId === resolvedGlobalId)
-            : undefined) ?? data.elements[0];
+        if (resolvedGlobalId) {
+          const res = await fetch(`/api/elements?guid=${encodeURIComponent(resolvedGlobalId)}`);
+          if (res.ok) {
+            const data: Record<string, ElemData | null> = await res.json();
+            elem = data[resolvedGlobalId] ?? undefined;
+          }
+        }
 
-          if (elem) {
+        // Fallback: fetch from model parse endpoint if GUID lookup failed
+        if (!elem) {
+          const res = await fetch(`/api/models/${encodeURIComponent(hitModelId)}/parse`);
+          if (res.ok) {
+            const data: { elements: ElemData[] } = await res.json();
+            elem = data.elements[0];
+          }
+        }
+
+        if (elem) {
             const info: SelectedElementInfo = {
               expressId: elem.expressId,
               globalId: elem.globalId,
@@ -789,13 +816,12 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
               setBcfSelection((prev) => {
                 const exists = prev.findIndex((p) => p.globalId === bcfEl.globalId);
                 if (exists >= 0) return prev.filter((_, i) => i !== exists);
-                return [...prev.slice(-1), bcfEl];
+                return [...prev, bcfEl];
               });
             } else {
               setBcfSelection([bcfEl]);
             }
           }
-        }
       } catch {
         // keep partial placeholder info
       } finally {
@@ -1163,15 +1189,18 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
       {bcfSelection.length > 0 && onCreateBcfIssue && (
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2
           bg-background/95 backdrop-blur-sm border border-primary/20 rounded-lg px-3 py-2 shadow-xl">
-          <div className="flex items-center gap-1.5 text-[11px] text-foreground/70">
-            {bcfSelection.map((el, i) => (
-              <span key={i} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: i === 0 ? "#ff3b30" : "#007aff" }} />
-                <span className="font-mono text-[10px] text-foreground/60 max-w-[120px] truncate">
-                  {el.globalId || el.modelFilename}
+          <div className="flex items-center gap-1.5 text-[11px] text-foreground/70 max-w-[400px] overflow-x-auto">
+            {bcfSelection.map((el, i) => {
+              const colors = ["#ff3b30", "#007aff", "#34c759", "#ff9500", "#af52de", "#00c7be", "#ff2d55", "#5856d6"];
+              return (
+                <span key={el.globalId || i} className="flex items-center gap-1 shrink-0">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colors[i % colors.length] }} />
+                  <span className="font-mono text-[10px] text-foreground/60 max-w-[120px] truncate">
+                    {el.globalId || el.modelFilename}
+                  </span>
                 </span>
-              </span>
-            ))}
+              );
+            })}
           </div>
           <span className="text-muted-foreground/30 text-[10px]">·</span>
           <span className="text-[10px] text-muted-foreground/50">Shift+click to add</span>

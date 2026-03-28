@@ -157,7 +157,7 @@ export function ClashDetail({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
-  }, [clash.id]);
+  }, [clash.guid]);
 
   const exportThisClash = useCallback(async () => {
     const blob = await exportBcf([clash], clash.title);

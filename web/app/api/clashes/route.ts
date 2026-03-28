@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseBcf } from "@/lib/bcf-parser";
 import { listClashes, clashCount, insertClash, deleteAllClashes } from "@/lib/db";
 import type { Clash } from "@/lib/types";
 
