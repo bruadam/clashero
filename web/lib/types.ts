@@ -48,3 +48,31 @@ export const PRIORITY_META: Record<ClashPriority, { label: string; color: string
   low:    { label: "Low",      color: "#639922", icon: "↓"   },
   none:   { label: "No priority", color: "#6B7280", icon: "···" },
 };
+
+export interface ActivityEntry {
+  id: string;
+  clashGuid: string;
+  type: "status_change" | "priority_change" | "assignee_change" | "comment" | "created";
+  actor: string; // e.g. "bruadam"
+  timestamp: string; // ISO 8601
+  field?: string;
+  from?: string;
+  to?: string;
+  body?: string; // for comments only
+}
+
+export interface Comment {
+  id: string;
+  clashGuid: string;
+  actor: string;
+  timestamp: string;
+  body: string; // markdown
+}
+
+export const STATUS_ORDER: ClashStatus[] = [
+  "in_progress",
+  "in_review",
+  "open",
+  "resolved",
+  "closed",
+];

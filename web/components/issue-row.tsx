@@ -1,63 +1,148 @@
 "use client";
 
+import Link from "next/link";
 import { cn, formatDate } from "@/lib/utils";
-import type { Clash } from "@/lib/types";
-import { STATUS_META, PRIORITY_META } from "@/lib/types";
+import type { Clash, ClashStatus, ClashPriority } from "@/lib/types";
+import { STATUS_META, PRIORITY_META, STATUS_ORDER } from "@/lib/types";
+import { StatusIcon } from "@/components/status-icon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { DisplayOptions, DisplayProp } from "@/components/display-options-panel";
 
 interface IssueRowProps {
   clash: Clash;
   selected: boolean;
   onClick: () => void;
+  onStatusChange?: (status: ClashStatus) => void;
+  onPriorityChange?: (priority: ClashPriority) => void;
+  displayOptions?: DisplayOptions;
 }
 
-export function IssueRow({ clash, selected, onClick }: IssueRowProps) {
-  const status = STATUS_META[clash.status];
+const PRIORITIES: ClashPriority[] = ["urgent", "high", "medium", "low", "none"];
+
+export function IssueRow({ clash, selected, onClick, onStatusChange, onPriorityChange, displayOptions }: IssueRowProps) {
   const priority = PRIORITY_META[clash.priority];
+  const show = (prop: DisplayProp) => !displayOptions || displayOptions.showProperties.has(prop);
 
   return (
-    <button
-      onClick={onClick}
+    <Link
+      href={`/clash/${clash.id}`}
       className={cn(
-        "group w-full flex items-center gap-2 px-4 py-1.5 text-left text-xs transition-colors border-b border-border/40",
+        "group w-full flex items-center gap-2 px-4 py-1.5 text-xs transition-colors border-b border-border/40 cursor-pointer",
         selected
           ? "bg-accent text-foreground"
           : "hover:bg-accent/40 text-foreground/80 hover:text-foreground"
       )}
+      onClick={onClick}
     >
-      {/* Priority icon */}
-      <span
-        className="w-5 shrink-0 font-mono text-[10px] font-semibold"
-        style={{ color: priority.color }}
-        title={priority.label}
-      >
-        {priority.icon}
-      </span>
+      {/* Priority dropdown */}
+      {show("priority") && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="w-5 shrink-0 font-mono text-[10px] font-semibold hover:opacity-70 transition-opacity"
+              style={{ color: priority.color }}
+              title={priority.label}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {priority.icon}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-40">
+            {PRIORITIES.map((p) => {
+              const meta = PRIORITY_META[p];
+              return (
+                <DropdownMenuItem
+                  key={p}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPriorityChange?.(p);
+                  }}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <span className="font-mono text-[10px] w-5" style={{ color: meta.color }}>
+                    {meta.icon}
+                  </span>
+                  {meta.label}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {/* ID */}
-      <span className="w-14 shrink-0 text-muted-foreground font-mono text-[11px]">{clash.id}</span>
+      {show("id") && (
+        <span className="w-14 shrink-0 text-muted-foreground font-mono text-[11px]">{clash.id}</span>
+      )}
 
-      {/* Status dot */}
-      <span
-        className="w-3 h-3 shrink-0 rounded-full border-2"
-        style={{
-          borderColor: status.color,
-          backgroundColor: clash.status === "resolved" || clash.status === "closed" ? status.color : "transparent",
-        }}
-        title={status.label}
-      />
+      {/* Status dropdown */}
+      {show("status") && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="shrink-0 hover:opacity-70 transition-opacity"
+              title={STATUS_META[clash.status].label}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <StatusIcon status={clash.status} size="sm" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-44">
+            {STATUS_ORDER.map((s) => {
+              const meta = STATUS_META[s];
+              return (
+                <DropdownMenuItem
+                  key={s}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStatusChange?.(s);
+                  }}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  <StatusIcon status={s} size="sm" />
+                  {meta.label}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {/* Title */}
       <span className="flex-1 truncate font-medium text-[13px]">{clash.title}</span>
 
+      {/* Assignee */}
+      {show("assignee") && clash.assignee && (
+        <span className="shrink-0 text-muted-foreground text-[11px] hidden sm:block">
+          {clash.assignee}
+        </span>
+      )}
+
       {/* Rule badge */}
-      <span className="shrink-0 text-muted-foreground text-[11px] hidden sm:block">
-        › {clash.ruleId}
-      </span>
+      {show("rule") && (
+        <span className="shrink-0 text-muted-foreground text-[11px] hidden sm:block">
+          › {clash.ruleId}
+        </span>
+      )}
+
+      {/* Labels */}
+      {show("labels") && clash.labels.length > 0 && (
+        <span className="shrink-0 text-muted-foreground text-[11px] hidden sm:block">
+          {clash.labels.join(", ")}
+        </span>
+      )}
 
       {/* Date */}
-      <span className="shrink-0 text-muted-foreground text-[11px] w-14 text-right">
-        {formatDate(clash.createdAt)}
-      </span>
-    </button>
+      {show("created") && (
+        <span className="shrink-0 text-muted-foreground text-[11px] w-14 text-right">
+          {formatDate(clash.createdAt)}
+        </span>
+      )}
+    </Link>
   );
 }

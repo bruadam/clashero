@@ -2,19 +2,31 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { Clash, ClashStatus } from "@/lib/types";
+import type { Clash, ClashStatus, ClashPriority } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import { IssueRow } from "./issue-row";
+import { StatusIcon } from "./status-icon";
+import type { DisplayOptions } from "@/components/display-options-panel";
 
 interface IssueGroupProps {
   status: ClashStatus;
   clashes: Clash[];
   selectedGuid: string | null;
   onSelectClash: (guid: string) => void;
+  onStatusChange?: (guid: string, status: ClashStatus) => void;
+  onPriorityChange?: (guid: string, priority: ClashPriority) => void;
+  displayOptions?: DisplayOptions;
 }
 
-export function IssueGroup({ status, clashes, selectedGuid, onSelectClash }: IssueGroupProps) {
+export function IssueGroup({
+  status,
+  clashes,
+  selectedGuid,
+  onSelectClash,
+  onStatusChange,
+  onPriorityChange,
+  displayOptions,
+}: IssueGroupProps) {
   const [collapsed, setCollapsed] = useState(false);
   const meta = STATUS_META[status];
 
@@ -30,14 +42,7 @@ export function IssueGroup({ status, clashes, selectedGuid, onSelectClash }: Iss
         <span className="text-muted-foreground w-3">
           {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         </span>
-        <span
-          className="w-2.5 h-2.5 rounded-full border-2 shrink-0"
-          style={{
-            borderColor: meta.color,
-            backgroundColor:
-              status === "resolved" || status === "closed" ? meta.color : "transparent",
-          }}
-        />
+        <StatusIcon status={status} size="sm" />
         <span className="text-xs font-medium text-foreground/80">{meta.label}</span>
         <span className="text-xs text-muted-foreground">{clashes.length}</span>
         <div className="flex-1" />
@@ -58,6 +63,9 @@ export function IssueGroup({ status, clashes, selectedGuid, onSelectClash }: Iss
               clash={clash}
               selected={selectedGuid === clash.guid}
               onClick={() => onSelectClash(clash.guid)}
+              onStatusChange={(s) => onStatusChange?.(clash.guid, s)}
+              onPriorityChange={(p) => onPriorityChange?.(clash.guid, p)}
+              displayOptions={displayOptions}
             />
           ))}
         </div>

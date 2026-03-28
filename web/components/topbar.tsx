@@ -1,8 +1,9 @@
 "use client";
 
-import { Settings, LayoutList, Grid3X3, Globe } from "lucide-react";
+import { Settings, LayoutList, Grid3X3, Globe, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/components/theme-provider";
 
 type Tab = "all" | "active" | "by-rule" | "overview";
 
@@ -19,6 +20,8 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export function Topbar({ activeTab, onTabChange }: TopbarProps) {
+  const { theme, toggle } = useTheme();
+
   return (
     <header className="flex h-11 items-center border-b border-border bg-background px-4 shrink-0">
       {/* Logo */}
@@ -50,6 +53,15 @@ export function Topbar({ activeTab, onTabChange }: TopbarProps) {
 
       {/* Right actions */}
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground"
+          onClick={toggle}
+          title="Toggle theme (D)"
+        >
+          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </Button>
         <Button variant="ghost" size="icon" className="text-muted-foreground">
           <Settings className="w-4 h-4" />
         </Button>
