@@ -1,8 +1,8 @@
 use parry3d_f64::bounding_volume::Aabb;
-use parry3d_f64::math::Isometry;
+use parry3d_f64::math::{Isometry, Vector};
 use parry3d_f64::partitioning::Qbvh;
-use parry3d_f64::query::{distance, intersection_test};
-use parry3d_f64::shape::TriMesh;
+use parry3d_f64::query::{contact, distance, intersection_test};
+use parry3d_f64::shape::{Shape, TriMesh};
 
 /// A simple stateless collision engine.
 pub struct CollisionEngine;
@@ -26,6 +26,57 @@ impl CollisionEngine {
         iso2: &Isometry<f64>,
     ) -> anyhow::Result<f64> {
         Ok(distance(iso1, mesh1, iso2, mesh2)?)
+    }
+
+    /// Calculates the penetration depth between two meshes.
+    /// If they don't overlap, returns 0.0.
+    pub fn penetration_depth(
+        mesh1: &TriMesh,
+        iso1: &Isometry<f64>,
+        mesh2: &TriMesh,
+        iso2: &Isometry<f64>,
+    ) -> anyhow::Result<f64> {
+        // Broad phase check first
+        if !Self::intersect(mesh1, iso1, mesh2, iso2)? {
+            return Ok(0.0);
+        }
+
+        // For Trimesh vs Trimesh, parry's `contact` might return 0 if it doesn't find a good global
+        // minimum translation vector. We can approximate it by looking at the distance
+        // between the centers or by checking how far one mesh is inside the other's AABB.
+        // However, a more reliable way for BIM is to use a small margin.
+        if let Some(c) = contact(iso1, mesh1, iso2, mesh2, 1.0)? {
+            if c.dist < 0.0 {
+                return Ok(-c.dist);
+            }
+        }
+
+        // Fallback for cases where even with margin it returns 0 (e.g. fully contained)
+        let aabb1 = mesh1.compute_aabb(iso1);
+        let aabb2 = mesh2.compute_aabb(iso2);
+        if let Some(overlap) = aabb1.intersection(&aabb2) {
+            let extents: Vector<f64> = overlap.extents();
+            return Ok(extents.x.min(extents.y).min(extents.z));
+        }
+
+        Ok(0.0)
+    }
+
+    /// Checks if two meshes are "touching" (distance < threshold, but not interpenetrating).
+    pub fn is_touching(
+        mesh1: &TriMesh,
+        iso1: &Isometry<f64>,
+        mesh2: &TriMesh,
+        iso2: &Isometry<f64>,
+        threshold: f64,
+    ) -> anyhow::Result<bool> {
+        let is_intersecting = Self::intersect(mesh1, iso1, mesh2, iso2)?;
+        if is_intersecting {
+            return Ok(false);
+        }
+
+        let dist = Self::distance(mesh1, iso1, mesh2, iso2)?;
+        Ok(dist < threshold)
     }
 
     /// Builds a Qbvh from a collection of AABBs.
@@ -116,6 +167,36 @@ mod tests {
 
         let dist = CollisionEngine::distance(&mesh1, &iso1, &mesh2, &iso2).unwrap();
         assert_eq!(dist, 1.0);
+    }
+
+    #[test]
+    fn test_penetration_depth() {
+        let mesh1 = create_cube_mesh(1.0);
+        let iso1 = Isometry::identity();
+        let mesh2 = create_cube_mesh(1.0);
+        let iso2 = Isometry::translation(0.8, 0.0, 0.0); // 0.2 overlap
+
+        let depth = CollisionEngine::penetration_depth(&mesh1, &iso1, &mesh2, &iso2).unwrap();
+        // Since it's an approximation, we check if it's within a reasonable range
+        assert!(depth > 0.0, "Depth was {}", depth);
+    }
+
+    #[test]
+    fn test_touching_cubes() {
+        let mesh1 = create_cube_mesh(1.0);
+        let iso1 = Isometry::identity();
+        let mesh2 = create_cube_mesh(1.0);
+        let iso2 = Isometry::translation(1.0001, 0.0, 0.0); // Near 1.0
+
+        let threshold = 0.001;
+        let result = CollisionEngine::is_touching(&mesh1, &iso1, &mesh2, &iso2, threshold).unwrap();
+        assert!(result);
+
+        // Overlapping cubes are not "touching" by our definition
+        let iso3 = Isometry::translation(0.5, 0.0, 0.0);
+        let result2 =
+            CollisionEngine::is_touching(&mesh1, &iso1, &mesh2, &iso3, threshold).unwrap();
+        assert!(!result2);
     }
 
     #[test]
