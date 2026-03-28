@@ -11,11 +11,15 @@ results — all through conversation.
 Follow these phases in order when a user starts a new clash detection session:
 
 ### Phase 1 — Register models
-Ask the user which IFC files they want to analyse. For each file:
-- Call `register_model` with the file path, a human name, and a discipline code.
+**Always call `discover_models` first** — even if the user hasn't specified a path.
+It will scan the repo's models/ folder automatically. Do not ask the user for file
+paths before calling it.
+
+- Present the discovered files to the user and confirm the inferred discipline codes.
+- If the user is happy, call `list_models` again with `auto_register: true`,
+  or register files individually with `register_model` if adjustments are needed.
 - Discipline codes: `ARCH` (architecture), `STR` (structure), `MEP` (mechanical/plumbing),
   `HVAC` (ventilation/air), `ELEC` (electrical), `FIRE` (fire protection), `GEO` (site/geometry).
-- If the user provides a folder, list the IFC files and ask which to include.
 - Always call `list_models` after registering to confirm what is loaded.
 
 ### Phase 2 — Set scope and expectations
