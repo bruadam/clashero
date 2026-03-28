@@ -3,11 +3,16 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import type * as OBC from "@thatopen/components";
+import type * as OBCF from "@thatopen/components-front";
 import type * as FRAGS from "@thatopen/fragments";
 import type { Clash, ClashViewpoint } from "@/lib/types";
 import type { IfcModelEntry } from "@/components/model-manager";
 import type { BcfSelectedElement } from "@/components/bcf-create-dialog";
-import { X, Loader2, FilePlus, ChevronDown } from "lucide-react";
+import {
+  X, Loader2, FilePlus, ChevronDown,
+  Maximize2, Grid3X3, Eye, EyeOff, Ruler, Scissors, RotateCcw,
+  Box, Sun,
+} from "lucide-react";
 import { STATUS_META, PRIORITY_META } from "@/lib/types";
 
 const PRIORITY_COLORS: Record<string, number> = {
@@ -87,6 +92,14 @@ interface ViewerRefs {
   grid: THREE.GridHelper | null;
   // track loaded filenames
   loadedFiles: Set<string>;
+  // tools
+  lengthMeasurement: OBCF.LengthMeasurement | null;
+  clipper: OBC.Clipper | null;
+  // authoring
+  hider: OBC.Hider | null;
+  classifier: OBC.Classifier | null;
+  boundingBoxer: OBC.BoundingBoxer | null;
+  highlighter: OBCF.Highlighter | null;
 }
 
 export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: colorizeByProp, onColorizeByChange, onCreateBcfIssue, onBubbleRightClick }: IfcViewerProps) {
@@ -124,7 +137,19 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     highlightGroup: null,
     grid: null,
     loadedFiles: new Set(),
+    lengthMeasurement: null,
+    clipper: null,
+    hider: null,
+    classifier: null,
+    boundingBoxer: null,
+    highlighter: null,
   });
+
+  // ── Toolbox state ──────────────────────────────────────────────────────────
+  const [activeTool, setActiveTool] = useState<"none" | "measure" | "clip">("none");
+  const [wireframe, setWireframe] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [isolated, setIsolated] = useState(false);
 
   const [loadingState, setLoadingState] = useState<LoadingState>("idle");
   const [loadedCount, setLoadedCount] = useState(0);
@@ -219,6 +244,42 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         wasm: { path: "/wasm/", absolute: true },
       });
 
+      // ── OBCF tools ────────────────────────────────────────────────────────
+      const OBCFRuntime = await import("@thatopen/components-front");
+      if (disposed) return;
+
+      const lengthMeasurement = components.get(OBCFRuntime.LengthMeasurement);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (lengthMeasurement as any).world = world;
+      lengthMeasurement.enabled = false;
+      refs.current.lengthMeasurement = lengthMeasurement as unknown as OBCF.LengthMeasurement;
+
+      const clipper = components.get(OBCRuntime.Clipper);
+      clipper.enabled = false;
+      refs.current.clipper = clipper;
+
+      // ── Authoring tools ───────────────────────────────────────────────────
+      const hider = components.get(OBCRuntime.Hider);
+      refs.current.hider = hider;
+
+      const classifier = components.get(OBCRuntime.Classifier);
+      refs.current.classifier = classifier;
+
+      const boundingBoxer = components.get(OBCRuntime.BoundingBoxer);
+      refs.current.boundingBoxer = boundingBoxer;
+
+      const highlighter = components.get(OBCFRuntime.Highlighter);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (highlighter as any).setup({ world });
+      highlighter.zoomToSelection = false;
+      refs.current.highlighter = highlighter as unknown as OBCF.Highlighter;
+
+      // Classify models as they load so Hider & Classifier work immediately
+      fragments.core.onModelLoaded.add(async () => {
+        try { await classifier.byIfcBuildingStorey(); } catch { /* no storey data */ }
+        try { await classifier.byModel(); } catch { /* skip */ }
+      });
+
       cleanupFn = () => {
         ro.disconnect();
         URL.revokeObjectURL(workerURL);
@@ -244,6 +305,12 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         highlightGroup: null,
         grid: null,
         loadedFiles: new Set(),
+        lengthMeasurement: null,
+        clipper: null,
+        hider: null,
+        classifier: null,
+        boundingBoxer: null,
+        highlighter: null,
       };
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -586,6 +653,145 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     };
   }, []);
 
+  // ── Tool handlers ──────────────────────────────────────────────────────────
+  const handleFitView = useCallback(() => {
+    const { world, fragments } = refs.current;
+    if (world && fragments) fitCameraToModels(world, fragments);
+  }, []);
+
+  const handleToggleWireframe = useCallback(() => {
+    const { fragments } = refs.current;
+    setWireframe((prev) => {
+      const next = !prev;
+      if (fragments?.initialized) {
+        for (const model of fragments.core.models.list.values()) {
+          model.object.traverse((child) => {
+            if (!(child instanceof THREE.Mesh)) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((m) => { (m as THREE.MeshLambertMaterial).wireframe = next; });
+          });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleGrid = useCallback(() => {
+    const { grid } = refs.current;
+    setShowGrid((prev) => {
+      const next = !prev;
+      if (grid) grid.visible = next;
+      return next;
+    });
+  }, []);
+
+  const handleToggleMeasure = useCallback(() => {
+    const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean; create: () => void } | null;
+    setActiveTool((prev) => {
+      const next = prev === "measure" ? "none" : "measure";
+      // disable clipper if switching to measure
+      const clipper = refs.current.clipper;
+      if (clipper) clipper.enabled = false;
+      if (lm) lm.enabled = next === "measure";
+      return next;
+    });
+  }, []);
+
+  const handleToggleClip = useCallback(() => {
+    const { clipper, world } = refs.current;
+    setActiveTool((prev) => {
+      const next = prev === "clip" ? "none" : "clip";
+      // disable measure if switching to clip
+      const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean } | null;
+      if (lm) lm.enabled = false;
+      if (clipper) {
+        clipper.enabled = next === "clip";
+        if (next === "clip" && world) {
+          // Create a clipping plane on double-click via the clipper's built-in handler
+          clipper.visible = true;
+        } else if (clipper) {
+          clipper.deleteAll();
+          clipper.visible = false;
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const handleResetTools = useCallback(() => {
+    const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean; deleteAll: () => void } | null;
+    const clipper = refs.current.clipper;
+    if (lm) { lm.enabled = false; lm.deleteAll(); }
+    if (clipper) { clipper.enabled = false; clipper.deleteAll(); clipper.visible = false; }
+    setActiveTool("none");
+  }, []);
+
+  // ── Authoring handlers ─────────────────────────────────────────────────────
+  const handleIsolateSelection = useCallback(async () => {
+    const { hider, highlighter, fragments } = refs.current;
+    if (!hider || !fragments?.initialized) return;
+    // Get currently highlighted (selected) items from Highlighter
+    const hl = highlighter as unknown as { selection: Record<string, OBC.ModelIdMap> } | null;
+    const selected: OBC.ModelIdMap = hl?.selection?.["select"] ?? {};
+    if (Object.keys(selected).length === 0) return;
+    await hider.isolate(selected);
+    setIsolated(true);
+  }, []);
+
+  const handleShowAll = useCallback(async () => {
+    const { hider } = refs.current;
+    if (!hider) return;
+    await hider.set(true);
+    setIsolated(false);
+  }, []);
+
+  const handleFitIsolated = useCallback(async () => {
+    const { boundingBoxer, hider, fragments, world } = refs.current;
+    if (!boundingBoxer || !fragments?.initialized || !world) return;
+    const hl = refs.current.highlighter as unknown as { selection: Record<string, OBC.ModelIdMap> } | null;
+    const selected: OBC.ModelIdMap = hl?.selection?.["select"] ?? {};
+    if (Object.keys(selected).length === 0) {
+      fitCameraToModels(world, fragments);
+      return;
+    }
+    boundingBoxer.dispose();
+    await boundingBoxer.addFromModelIdMap(selected);
+    const box = boundingBoxer.get();
+    if (box.isEmpty()) { fitCameraToModels(world, fragments); return; }
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const dist = Math.max(size.x, size.y, size.z) * 2;
+    world.camera.controls.setLookAt(
+      center.x + dist * 0.6, center.y + dist * 0.5, center.z + dist * 0.8,
+      center.x, center.y, center.z, true,
+    );
+    boundingBoxer.dispose();
+  }, []);
+
+  const handleSelectStorey = useCallback(async (storey: string) => {
+    const { classifier, hider, highlighter, fragments } = refs.current;
+    if (!classifier || !hider || !fragments?.initialized) return;
+    try {
+      const found = await classifier.find({ "Storey": [storey] });
+      if (Object.keys(found).length === 0) return;
+      await hider.isolate(found);
+      setIsolated(true);
+      // Also highlight the selection
+      const hl = highlighter as unknown as { highlightByID: (name: string, map: OBC.ModelIdMap, removePrevious?: boolean) => Promise<void> } | null;
+      await hl?.highlightByID("select", found, true);
+    } catch { /* classifier may not have storey data */ }
+  }, []);
+
+  // Forward double-click to clipper / length measurement create
+  const handleCanvasDoubleClick = useCallback(() => {
+    const { clipper, world } = refs.current;
+    const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean; create: () => void } | null;
+    if (lm?.enabled) { lm.create(); return; }
+    if (clipper?.enabled && world) {
+      clipper.create(world as Parameters<typeof clipper.create>[0]);
+    }
+  }, []);
+
   const bgClass = theme === "dark" ? "bg-[#090910]" : "bg-white";
   const overlayBgClass = theme === "dark" ? "bg-[#090910]/80" : "bg-white/80";
 
@@ -595,6 +801,7 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         ref={containerRef}
         className="w-full h-full"
         onClick={handleCanvasClick}
+        onDoubleClick={handleCanvasDoubleClick}
         onContextMenu={handleCanvasContextMenu}
       />
 
@@ -781,6 +988,231 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
           >
             <X className="w-3 h-3" />
           </button>
+        </div>
+      )}
+
+      {/* Vertical toolbox */}
+      <ViewerToolbox
+        activeTool={activeTool}
+        wireframe={wireframe}
+        showGrid={showGrid}
+        isolated={isolated}
+        onFitView={handleFitView}
+        onToggleWireframe={handleToggleWireframe}
+        onToggleGrid={handleToggleGrid}
+        onToggleMeasure={handleToggleMeasure}
+        onToggleClip={handleToggleClip}
+        onReset={handleResetTools}
+        onIsolate={handleIsolateSelection}
+        onShowAll={handleShowAll}
+        onFitIsolated={handleFitIsolated}
+        onSelectStorey={handleSelectStorey}
+        storeys={(() => {
+          const classifier = refs.current.classifier;
+          if (!classifier) return [];
+          const storeyMap = classifier.list.get("Storey");
+          if (!storeyMap) return [];
+          return Array.from(storeyMap.keys()).sort();
+        })()}
+      />
+    </div>
+  );
+}
+
+// ── Vertical Toolbox ──────────────────────────────────────────────────────────
+
+interface ToolboxProps {
+  activeTool: "none" | "measure" | "clip";
+  wireframe: boolean;
+  showGrid: boolean;
+  isolated: boolean;
+  storeys: string[];
+  onFitView: () => void;
+  onToggleWireframe: () => void;
+  onToggleGrid: () => void;
+  onToggleMeasure: () => void;
+  onToggleClip: () => void;
+  onReset: () => void;
+  onIsolate: () => void;
+  onShowAll: () => void;
+  onFitIsolated: () => void;
+  onSelectStorey: (storey: string) => void;
+}
+
+function ViewerToolbox({
+  activeTool,
+  wireframe,
+  showGrid,
+  isolated,
+  storeys,
+  onFitView,
+  onToggleWireframe,
+  onToggleGrid,
+  onToggleMeasure,
+  onToggleClip,
+  onReset,
+  onIsolate,
+  onShowAll,
+  onFitIsolated,
+  onSelectStorey,
+}: ToolboxProps) {
+  const [storeyOpen, setStoreyOpen] = useState(false);
+
+  type ToolDef = {
+    id: string;
+    icon: React.ReactNode;
+    tooltip: string;
+    active?: boolean;
+    onClick: () => void;
+    separator?: boolean;
+  };
+
+  const viewTools: ToolDef[] = [
+    {
+      id: "fit",
+      icon: <Maximize2 className="w-3.5 h-3.5" />,
+      tooltip: "Fit all to view",
+      onClick: onFitView,
+    },
+    {
+      id: "grid",
+      icon: <Grid3X3 className="w-3.5 h-3.5" />,
+      tooltip: showGrid ? "Hide grid" : "Show grid",
+      active: showGrid,
+      onClick: onToggleGrid,
+    },
+    {
+      id: "wireframe",
+      icon: <Box className="w-3.5 h-3.5" />,
+      tooltip: wireframe ? "Solid view" : "Wireframe view",
+      active: wireframe,
+      onClick: onToggleWireframe,
+    },
+  ];
+
+  const measureTools: ToolDef[] = [
+    {
+      id: "measure",
+      icon: <Ruler className="w-3.5 h-3.5" />,
+      tooltip: activeTool === "measure" ? "Stop measuring" : "Length measurement (dbl-click to place)",
+      active: activeTool === "measure",
+      onClick: onToggleMeasure,
+    },
+    {
+      id: "clip",
+      icon: <Scissors className="w-3.5 h-3.5" />,
+      tooltip: activeTool === "clip" ? "Remove section planes" : "Section plane (dbl-click to place)",
+      active: activeTool === "clip",
+      onClick: onToggleClip,
+    },
+    {
+      id: "reset",
+      icon: <RotateCcw className="w-3.5 h-3.5" />,
+      tooltip: "Clear measurements & section planes",
+      onClick: onReset,
+    },
+  ];
+
+  const authoringTools: ToolDef[] = [
+    {
+      id: "isolate",
+      icon: <Eye className="w-3.5 h-3.5" />,
+      tooltip: "Isolate selection (click element first)",
+      active: isolated,
+      onClick: onIsolate,
+    },
+    {
+      id: "showall",
+      icon: <EyeOff className="w-3.5 h-3.5" />,
+      tooltip: "Show all elements",
+      onClick: onShowAll,
+    },
+    {
+      id: "fitsel",
+      icon: <Sun className="w-3.5 h-3.5" />,
+      tooltip: "Fit camera to selection",
+      onClick: onFitIsolated,
+    },
+  ];
+
+  return (
+    <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-0.5 bg-black/50 backdrop-blur-sm border border-white/10 rounded-lg p-1">
+      {/* View tools */}
+      {viewTools.map((t) => (
+        <ToolButton key={t.id} icon={t.icon} tooltip={t.tooltip} active={t.active} onClick={t.onClick} />
+      ))}
+
+      <div className="w-4 h-px bg-white/10 my-1" />
+
+      {/* Measure tools */}
+      {measureTools.map((t) => (
+        <ToolButton key={t.id} icon={t.icon} tooltip={t.tooltip} active={t.active} onClick={t.onClick} />
+      ))}
+
+      <div className="w-4 h-px bg-white/10 my-1" />
+
+      {/* Authoring tools */}
+      {authoringTools.map((t) => (
+        <ToolButton key={t.id} icon={t.icon} tooltip={t.tooltip} active={t.active} onClick={t.onClick} />
+      ))}
+
+      {/* Storey picker */}
+      {storeys.length > 0 && (
+        <div className="relative">
+          <ToolButton
+            icon={<ChevronDown className="w-3.5 h-3.5" />}
+            tooltip="Isolate by storey"
+            onClick={() => setStoreyOpen((v) => !v)}
+            active={storeyOpen}
+          />
+          {storeyOpen && (
+            <div className="absolute right-full mr-2 top-0 bg-popover border border-border rounded-md shadow-lg py-1 z-50 min-w-[140px] max-h-56 overflow-y-auto">
+              <p className="px-3 py-1 text-[10px] text-muted-foreground/50 select-none">Building Storey</p>
+              {storeys.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => { onSelectStorey(s); setStoreyOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent/60 transition-colors text-foreground/70"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolButton({
+  icon,
+  tooltip,
+  active,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  tooltip: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  const [showTip, setShowTip] = useState(false);
+
+  return (
+    <div className="relative group" onMouseEnter={() => setShowTip(true)} onMouseLeave={() => setShowTip(false)}>
+      <button
+        onClick={onClick}
+        className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${
+          active
+            ? "bg-primary/80 text-primary-foreground"
+            : "text-white/50 hover:text-white hover:bg-white/10"
+        }`}
+      >
+        {icon}
+      </button>
+      {showTip && (
+        <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 whitespace-nowrap bg-popover border border-border text-foreground text-[10px] rounded px-2 py-1 shadow-lg pointer-events-none z-50">
+          {tooltip}
         </div>
       )}
     </div>

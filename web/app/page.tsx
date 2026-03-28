@@ -150,6 +150,7 @@ export default function Home() {
   const [clashes, setClashes] = useState<Clash[]>([]);
   const [focusMode, setFocusMode] = useState<FocusMode>("split");
   const [listWidth, setListWidth] = useState(420);
+  const [detailWidth, setDetailWidth] = useState(320);
   const [displayOptions, setDisplayOptions] = useState<DisplayOptions>(
     DEFAULT_DISPLAY_OPTIONS,
   );
@@ -163,6 +164,9 @@ export default function Home() {
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
   const startWidthRef = useRef(420);
+  const isDetailDraggingRef = useRef(false);
+  const detailStartXRef = useRef(0);
+  const detailStartWidthRef = useRef(320);
   const filterBtnRef = useRef<HTMLButtonElement>(null);
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -404,7 +408,7 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedGuid, flatList, goNext, goPrev, toggleTheme]);
 
-  // Resize drag
+  // Resize drag — viewer/list divider
   const onResizeMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
@@ -415,11 +419,7 @@ export default function Home() {
       const onMove = (ev: MouseEvent) => {
         if (!isDraggingRef.current) return;
         const delta = startXRef.current - ev.clientX;
-        const newWidth = Math.max(
-          280,
-          Math.min(700, startWidthRef.current + delta),
-        );
-        setListWidth(newWidth);
+        setListWidth(Math.max(120, startWidthRef.current + delta));
       };
       const onUp = () => {
         isDraggingRef.current = false;
@@ -430,6 +430,30 @@ export default function Home() {
       window.addEventListener("mouseup", onUp);
     },
     [listWidth],
+  );
+
+  // Resize drag — list/detail divider
+  const onDetailResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isDetailDraggingRef.current = true;
+      detailStartXRef.current = e.clientX;
+      detailStartWidthRef.current = detailWidth;
+
+      const onMove = (ev: MouseEvent) => {
+        if (!isDetailDraggingRef.current) return;
+        const delta = detailStartXRef.current - ev.clientX;
+        setDetailWidth(Math.max(120, detailStartWidthRef.current + delta));
+      };
+      const onUp = () => {
+        isDetailDraggingRef.current = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [detailWidth],
   );
 
   const totalVisible = filteredClashes.filter(
@@ -545,10 +569,10 @@ export default function Home() {
         {showList && (
           <div
             className="shrink-0 flex overflow-hidden relative before:absolute before:left-0 before:top-3 before:bottom-3 before:w-px before:rounded-full before:bg-primary/15"
-            style={{ width: focusMode === "list" ? "100%" : listWidth + (selectedClash ? 321 : 0) }}
+            style={{ width: focusMode === "list" ? "100%" : listWidth }}
           >
-            {/* Issue list — always visible */}
-            <div className="flex flex-col overflow-hidden" style={{ width: focusMode === "list" ? (selectedClash ? "calc(100% - 321px)" : "100%") : listWidth }}>
+            {/* Issue list — always visible, shrinks when detail is open */}
+            <div className="flex flex-col overflow-hidden min-w-0" style={{ flex: selectedClash ? `0 0 ${listWidth - detailWidth}px` : "1 1 auto" }}>
               {/* List header */}
               <div className="px-3 py-2 shrink-0 flex items-center gap-2">
                 <h2 className="text-[11px] font-semibold text-foreground/60 tracking-tight">
@@ -786,11 +810,16 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Detail panel — slides in when an issue is selected */}
+            {/* Detail panel — appears alongside list when an issue is selected */}
             {selectedClash && (
               <>
-                <div className="w-px shrink-0 bg-border" />
-                <div className="w-80 shrink-0 flex flex-col overflow-hidden">
+                <div
+                  className="w-1 shrink-0 bg-primary/10 hover:bg-primary/30 cursor-col-resize transition-colors relative"
+                  onMouseDown={onDetailResizeMouseDown}
+                >
+                  <div className="absolute inset-y-0 -left-1 -right-1" />
+                </div>
+                <div className="flex flex-col overflow-hidden min-w-0" style={{ width: detailWidth }}>
                   <ClashDetail
                     clash={selectedClash}
                     index={selectedIndex}

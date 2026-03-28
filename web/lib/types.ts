@@ -6,6 +6,12 @@ export interface ClashViewpoint {
   cameraDirection: [number, number, number];
   cameraUpVector: [number, number, number];
   target: [number, number, number];
+  /** Perspective field of view in degrees (undefined for orthogonal cameras) */
+  fieldOfView?: number;
+  /** Orthogonal camera view-to-world scale (undefined for perspective cameras) */
+  orthogonalScale?: number;
+  /** "perspective" | "orthogonal" */
+  cameraType?: "perspective" | "orthogonal";
 }
 
 export interface Clash {
@@ -25,6 +31,8 @@ export interface Clash {
   assignee?: string;
   labels: string[];
   createdAt: string;
+  modifiedDate?: string;
+  creationAuthor?: string;
   linearIssueId?: string;
 }
 
