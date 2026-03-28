@@ -1,4 +1,4 @@
-# Clashero -  A clash detection tool based on Claude
+# Clashero - A clash detection tool based on Claude
 
 Clashero is a powerful clash detection tool designed to be used as a MCP agent in Claude to analyze, identify, prioritize, and report on clashes in 3D models. It provides detailed insights into the nature of clashes, their severity, and actionable recommendations for resolution. It assigns the issues to the appropriate responsible person or team based on the type of clash and the components involved.
 
@@ -10,3 +10,80 @@ Clashero is a powerful clash detection tool designed to be used as a MCP agent i
 - **Responsibility Assignment**: Automatically assign clashes to the appropriate responsible person or team based on the type of clash and the components involved.
 - **Screenshot Generation**: Capture screenshots of the clashes for visual reference in reports and communication.
 - **Integration with Project Management Tools**: Optionally integrate with project management tools to create tasks for resolving clashes and track their resolution status. (e.g. Linear, Microsoft List, etc.)
+
+## Repository Structure
+
+```
+clashero/
+├── clash/          # Rust clash detection engine (C)
+├── mcp-server/     # MCP server — Claude integration (A)
+├── models/         # IFC model files
+├── CLAUDE.md       # Claude agent instructions and workflow
+└── README.md
+```
+
+## Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org) v18 or later
+- [Rust](https://rustup.rs) (for the clash engine)
+- [Claude Desktop](https://claude.ai/download) (to use the MCP server)
+
+### MCP Server setup
+
+The MCP server is what connects Claude Desktop to the clash detection tools.
+
+```bash
+cd mcp-server
+npm install
+npm run build
+```
+
+Then add the following to your Claude Desktop config file
+(`%APPDATA%\Claude\claude_desktop_config.json` on Windows,
+`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "clashero": {
+      "command": "node",
+      "args": ["C:\\path\\to\\clashero\\mcp-server\\dist\\index.js"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. You should see **clashero** listed under the connectors icon in the chat input.
+
+### Clash engine setup
+
+You can download the pre-built **Clash CLI** binary for your operating system from the [GitHub Releases](https://github.com/kongsgaard/clashero/releases) page.
+
+To ensure the `clash` command is available in your terminal (added to your PATH), move the downloaded binary to:
+- **macOS/Linux**: `/usr/local/bin/`
+- **Windows**: A folder included in your PATH, such as `C:\Windows\System32\` (requires admin) or a custom folder added to your Environment Variables.
+
+Alternatively, you can build it from source if you have Rust installed:
+
+```bash
+cd clash
+cargo build --release
+```
+
+After building, the binary will be located at `clash/target/release/clash`.
+
+### Agent Skills
+
+To enable agents to work with the clash detection engine, you can download the **clash-cli** skill. This skill provides the necessary instructions and context for agents to use the `clash` command effectively.
+
+You can find the skill in the `skills/clash-cli` directory.
+
+### Usage
+
+Open Claude Desktop and describe what you want to do in plain language:
+
+> "I want to run clash detection on my IFC models in C:/models/project"
+
+Claude will guide you through registering models, generating clash rules, running detection, and reviewing results.
