@@ -16,7 +16,9 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install Rust
         run: rustup update stable && rustup component add rustfmt
+        working-directory: ./clash
       - name: Check formatting
+        working-directory: ./clash
         run: cargo fmt --check
 
   build:
@@ -24,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build
+        working-directory: ./clash
         run: cargo build --verbose
 
   test:
@@ -31,4 +34,5 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run tests
+        working-directory: ./clash
         run: cargo test --verbose
