@@ -57,34 +57,21 @@ fn test_load_ifc_elements() -> Result<()> {
 
 #[test]
 fn test_load_real_ifc_model() -> Result<()> {
-    let path = "tests/models/30_TGA_Elektro_GN.ifc";
+    let path = "tests/models/AC20-FZK-Haus.ifc";
 
     // Test metadata loading
     let metadata = load_ifc_metadata(path)?;
     assert!(
-        metadata.len() > 200000,
+        metadata.len() > 40000,
         "Should have loaded a large number of metadata entries"
     );
-
-    // Check some expected types from the probe
-    let mut light_fixtures = 0;
-    let mut junction_boxes = 0;
-    for meta in metadata.values() {
-        if meta.ifc_type == "IFCLIGHTFIXTURE" {
-            light_fixtures += 1;
-        } else if meta.ifc_type == "IFCJUNCTIONBOX" {
-            junction_boxes += 1;
-        }
-    }
-    assert_eq!(light_fixtures, 1653);
-    assert_eq!(junction_boxes, 307);
 
     // Test geometry loading
     let elements = load_ifc_elements(path)?;
     assert_eq!(
         elements.len(),
-        7389,
-        "Should have loaded exactly 7389 elements with geometry"
+        107,
+        "Should have loaded exactly 107 elements with geometry"
     );
 
     // Verify some properties of the loaded elements
@@ -92,6 +79,30 @@ fn test_load_real_ifc_model() -> Result<()> {
     assert!(!first_element.metadata.guid.is_empty());
     assert!(first_element.mesh.vertices().len() > 0);
     assert!(first_element.mesh.indices().len() > 0);
+
+    // Verify element with opening (IfcWallStandardCase #17040 with opening #17106)
+    // GUID for #17040 is "3PfS__Y_DBAfq5naM6zD2Z"
+    let wall_with_opening = elements
+        .iter()
+        .find(|e| e.metadata.guid == "3PfS__Y_DBAfq5naM6zD2Z");
+    assert!(
+        wall_with_opening.is_some(),
+        "Wall with opening should be present"
+    );
+
+    let wall = wall_with_opening.unwrap();
+    // A standard wall (box) has 12 triangles. If openings are subtracted, it might have more.
+    assert!(
+        wall.mesh.indices().len() >= 12,
+        "Wall should have at least 12 triangles"
+    );
+
+    // Verify IfcOpeningElement #17106
+    // GUID for #17106 is "0LM8GvGe$G3dlW4mZ4aA9R"
+    let opening = elements
+        .iter()
+        .find(|e| e.metadata.guid == "0LM8GvGe$G3dlW4mZ4aA9R");
+    assert!(opening.is_some(), "Opening element should be present");
 
     Ok(())
 }
