@@ -93,6 +93,11 @@ fn main() -> Result<()> {
 
                     if is_clash {
                         clash_count += 1;
+                        let pos = [
+                            (el1.mesh.vertices()[0].x + el2.mesh.vertices()[0].x) / 2.0,
+                            (el1.mesh.vertices()[0].y + el2.mesh.vertices()[0].y) / 2.0,
+                            (el1.mesh.vertices()[0].z + el2.mesh.vertices()[0].z) / 2.0,
+                        ];
                         clash_infos.push(ClashInfo {
                             guid_a: el1.metadata.guid.clone(),
                             guid_b: el2.metadata.guid.clone(),
@@ -103,12 +108,8 @@ fn main() -> Result<()> {
                                 el2.metadata.ifc_type,
                                 el2.metadata.guid
                             ),
-                            // Simple centroid approximation for viewpoint
-                            position: [
-                                (el1.mesh.vertices()[0].x + el2.mesh.vertices()[0].x) / 2.0,
-                                (el1.mesh.vertices()[0].y + el2.mesh.vertices()[0].y) / 2.0,
-                                (el1.mesh.vertices()[0].z + el2.mesh.vertices()[0].z) / 2.0,
-                            ],
+                            position: pos,
+                            camera_eye: Some([pos[0] + 2.0, pos[1] + 2.0, pos[2] + 2.0]),
                         });
                     }
                 }

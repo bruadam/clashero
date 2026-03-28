@@ -14,6 +14,7 @@ pub struct ClashInfo {
     pub guid_b: String,
     pub description: String,
     pub position: [f64; 3],
+    pub camera_eye: Option<[f64; 3]>,
 }
 
 pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()> {
@@ -120,33 +121,51 @@ pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()
 
         bcfv_writer.write_event(Event::Start(BytesStart::new("PerspectiveCamera")))?;
 
+        let (eye, dir) = if let Some(eye) = clash.camera_eye {
+            let d = [
+                clash.position[0] - eye[0],
+                clash.position[1] - eye[1],
+                clash.position[2] - eye[2],
+            ];
+            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            let dir = if len > 0.0 {
+                [d[0] / len, d[1] / len, d[2] / len]
+            } else {
+                [-0.577, -0.577, -0.577]
+            };
+            (eye, dir)
+        } else {
+            (
+                [
+                    clash.position[0] + 5.0,
+                    clash.position[1] + 5.0,
+                    clash.position[2] + 5.0,
+                ],
+                [-0.577, -0.577, -0.577],
+            )
+        };
+
         bcfv_writer.write_event(Event::Start(BytesStart::new("CameraViewPoint")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("X")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new(
-            &(clash.position[0] + 5.0).to_string(),
-        )))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new(&eye[0].to_string())))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("X")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("Y")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new(
-            &(clash.position[1] + 5.0).to_string(),
-        )))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new(&eye[1].to_string())))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("Y")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("Z")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new(
-            &(clash.position[2] + 5.0).to_string(),
-        )))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new(&eye[2].to_string())))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("Z")))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("CameraViewPoint")))?;
 
         bcfv_writer.write_event(Event::Start(BytesStart::new("CameraDirection")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("X")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new("-0.577")))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new(&dir[0].to_string())))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("X")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("Y")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new("-0.577")))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new(&dir[1].to_string())))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("Y")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("Z")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new("-0.577")))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new(&dir[2].to_string())))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("Z")))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("CameraDirection")))?;
 
