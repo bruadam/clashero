@@ -61,6 +61,7 @@ jobs:
 
       - name: Get Version
         id: get_version
+        working-directory: ./clash
         run: |
           VERSION=$(grep '^version =' Cargo.toml | head -n 1 | cut -d '"' -f 2)
           echo "VERSION=$VERSION" >> $GITHUB_ENV

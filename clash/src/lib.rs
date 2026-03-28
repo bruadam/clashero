@@ -81,9 +81,9 @@ pub fn clash_detect(
                 pos[2] * unit_scale,
             ];
             let camera_eye = [
-                (pos[0] * unit_scale + 20.0 * unit_scale),
-                (pos[1] * unit_scale + 20.0 * unit_scale),
-                (pos[2] * unit_scale + 20.0 * unit_scale),
+                pos[0] * unit_scale,
+                pos[1] * unit_scale,
+                pos[2] * unit_scale,
             ];
 
             // println!("\nClash Position (normalized to meters):");
