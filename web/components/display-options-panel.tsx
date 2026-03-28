@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { X, ArrowDownUp } from "lucide-react";
+import { ArrowDownUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type GroupBy = "status" | "priority" | "rule" | "assignee" | "model" | "none";
@@ -64,26 +64,30 @@ interface DisplayOptionsPanelProps {
   options: DisplayOptions;
   onChange: (options: DisplayOptions) => void;
   onClose: () => void;
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function DisplayOptionsPanel({ open, options, onChange, onClose }: DisplayOptionsPanelProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
+export function DisplayOptionsPanel({ open, options, onChange, onClose, anchorRef }: DisplayOptionsPanelProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        !(anchorRef?.current?.contains(e.target as Node))
+      ) {
         onClose();
       }
     };
-    // Delay to avoid closing immediately on the trigger click
     const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0);
     return () => {
       clearTimeout(timer);
       document.removeEventListener("mousedown", handler);
     };
-  }, [open, onClose]);
+  }, [open, onClose, anchorRef]);
 
   function setGroupBy(groupBy: GroupBy) {
     onChange({ ...options, groupBy });
@@ -111,23 +115,12 @@ export function DisplayOptionsPanel({ open, options, onChange, onClose }: Displa
 
   return (
     <div
-      ref={panelRef}
-      className="absolute top-0 right-0 bottom-0 z-30 w-72 bg-background border-l border-border shadow-xl flex flex-col overflow-y-auto"
+      ref={menuRef}
+      className="absolute top-8 right-0 z-50 w-64 bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <span className="text-xs font-semibold text-foreground">Display options</span>
-        <button
-          onClick={onClose}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-0 text-xs">
+      <div className="flex flex-col gap-0 text-xs py-1">
         {/* Grouping */}
-        <Row label="Grouping">
+        <Row label="Group by">
           <Select
             value={options.groupBy}
             options={GROUP_OPTIONS}
@@ -136,7 +129,7 @@ export function DisplayOptionsPanel({ open, options, onChange, onClose }: Displa
         </Row>
 
         {/* Ordering */}
-        <Row label="Ordering">
+        <Row label="Order by">
           <div className="flex items-center gap-1">
             <button
               onClick={toggleOrderDir}
@@ -158,13 +151,13 @@ export function DisplayOptionsPanel({ open, options, onChange, onClose }: Displa
           </div>
         </Row>
 
-        <div className="border-t border-border/60 mx-4 my-1" />
+        <div className="border-t border-border/60 mx-2 my-1" />
 
         {/* Display properties */}
-        <div className="px-4 pt-2 pb-1">
-          <span className="text-[11px] text-muted-foreground font-medium">Display properties</span>
+        <div className="px-3 pt-1 pb-0.5">
+          <span className="text-[11px] text-muted-foreground font-medium">Properties</span>
         </div>
-        <div className="px-4 pb-4 flex flex-wrap gap-1.5">
+        <div className="px-3 pb-3 flex flex-wrap gap-1.5">
           {DISPLAY_PROPS.map((prop) => {
             const active = options.showProperties.has(prop.value);
             return (
@@ -190,7 +183,7 @@ export function DisplayOptionsPanel({ open, options, onChange, onClose }: Displa
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-4 py-2 border-b border-border/40 last:border-0">
+    <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 last:border-0">
       <span className="text-muted-foreground">{label}</span>
       {children}
     </div>
@@ -206,7 +199,6 @@ function Select<T extends string>({
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
-  const current = options.find((o) => o.value === value);
   return (
     <div className="relative">
       <select

@@ -25,6 +25,7 @@ export interface Clash {
   assignee?: string;
   labels: string[];
   createdAt: string;
+  linearIssueId?: string;
 }
 
 export interface ClashRule {
