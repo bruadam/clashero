@@ -1,20 +1,20 @@
 use clash::clash_engine::CollisionEngine;
 use parry3d_f64::bounding_volume::Aabb;
-use parry3d_f64::math::{Isometry, Point, Vector};
+use parry3d_f64::math::{Pose as Isometry, Vector};
 use parry3d_f64::query::intersection_test;
 use parry3d_f64::shape::{Cuboid, TriMesh};
 
 fn create_cube_mesh(size: f64) -> TriMesh {
     let s = size / 2.0;
     let vertices = vec![
-        Point::new(-s, -s, -s),
-        Point::new(s, -s, -s),
-        Point::new(s, s, -s),
-        Point::new(-s, s, -s),
-        Point::new(-s, -s, s),
-        Point::new(s, -s, s),
-        Point::new(s, s, s),
-        Point::new(-s, s, s),
+        Vector::new(-s, -s, -s),
+        Vector::new(s, -s, -s),
+        Vector::new(s, s, -s),
+        Vector::new(-s, s, -s),
+        Vector::new(-s, -s, s),
+        Vector::new(s, -s, s),
+        Vector::new(s, s, s),
+        Vector::new(-s, s, s),
     ];
     let indices = vec![
         [0, 1, 2],
@@ -30,7 +30,7 @@ fn create_cube_mesh(size: f64) -> TriMesh {
         [3, 0, 4],
         [3, 4, 7], // Left
     ];
-    TriMesh::new(vertices, indices)
+    TriMesh::new(vertices, indices).expect("Mock cube mesh should be valid")
 }
 
 #[test]
@@ -103,20 +103,20 @@ fn test_broad_phase_rebuild_and_query() {
     let aabbs = vec![
         (
             0,
-            Aabb::new(Point::new(0.0, 0.0, 0.0), Point::new(1.0, 1.0, 1.0)),
+            Aabb::new(Vector::new(0.0, 0.0, 0.0), Vector::new(1.0, 1.0, 1.0)),
         ),
         (
             1,
-            Aabb::new(Point::new(0.5, 0.5, 0.5), Point::new(1.5, 1.5, 1.5)),
+            Aabb::new(Vector::new(0.5, 0.5, 0.5), Vector::new(1.5, 1.5, 1.5)),
         ),
         (
             2,
-            Aabb::new(Point::new(2.0, 2.0, 2.0), Point::new(3.0, 3.0, 3.0)),
+            Aabb::new(Vector::new(2.0, 2.0, 2.0), Vector::new(3.0, 3.0, 3.0)),
         ),
     ];
 
-    let bvh = CollisionEngine::build_broad_phase(aabbs);
-    let results = CollisionEngine::broad_phase_query(&bvh);
+    let bvh = CollisionEngine::build_broad_phase(&aabbs);
+    let results = CollisionEngine::broad_phase_query(&bvh, &aabbs);
 
     // Should find (0, 1) or (1, 0)
     assert!(results.contains(&(0, 1)) || results.contains(&(1, 0)));
@@ -132,19 +132,22 @@ fn test_broad_phase_performance_1000() {
 
     let mut aabbs = Vec::new();
     for i in 0..1000 {
-        let center = Point::new(i as f64 * 2.0, 0.0, 0.0);
+        let center = Vector::new(i as f64 * 2.0, 0.0, 0.0);
         let half_extents = Vector::new(0.5, 0.5, 0.5);
-        aabbs.push((i, Aabb::new(center - half_extents, center + half_extents)));
+        aabbs.push((
+            i as u32,
+            Aabb::new(center - half_extents, center + half_extents),
+        ));
     }
 
     // Add one clashing AABB
     aabbs.push((
         1000,
-        Aabb::new(Point::new(0.2, 0.2, 0.2), Point::new(0.8, 0.8, 0.8)),
+        Aabb::new(Vector::new(0.2, 0.2, 0.2), Vector::new(0.8, 0.8, 0.8)),
     ));
 
     let start_build = Instant::now();
-    let bvh = CollisionEngine::build_broad_phase(aabbs);
+    let bvh = CollisionEngine::build_broad_phase(&aabbs);
     let build_duration = start_build.elapsed();
 
     println!("BVH Build time for 1000 elements: {:?}", build_duration);
@@ -155,7 +158,7 @@ fn test_broad_phase_performance_1000() {
     );
 
     let start_query = Instant::now();
-    let results = CollisionEngine::broad_phase_query(&bvh);
+    let results = CollisionEngine::broad_phase_query(&bvh, &aabbs);
     let query_duration = start_query.elapsed();
 
     println!("BVH Query time for 1000 elements: {:?}", query_duration);

@@ -59,9 +59,9 @@ mod tests {
 
     fn create_mock_element(ifc_type: &str, guid: &str) -> IfcElement {
         let vertices = vec![
-            parry3d_f64::math::Point::new(0.0, 0.0, 0.0),
-            parry3d_f64::math::Point::new(1.0, 0.0, 0.0),
-            parry3d_f64::math::Point::new(0.0, 1.0, 0.0),
+            parry3d_f64::math::Vector::new(0.0, 0.0, 0.0),
+            parry3d_f64::math::Vector::new(1.0, 0.0, 0.0),
+            parry3d_f64::math::Vector::new(0.0, 1.0, 0.0),
         ];
         let indices = vec![[0, 1, 2]];
         IfcElement {
@@ -72,7 +72,7 @@ mod tests {
                 properties: HashMap::new(),
                 length_unit: "meter".to_string(),
             },
-            mesh: TriMesh::new(vertices, indices),
+            mesh: TriMesh::new(vertices, indices).expect("Mock mesh should be valid"),
         }
     }
 

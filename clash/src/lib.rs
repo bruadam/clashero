@@ -7,7 +7,7 @@ use anyhow::Result;
 use bcf_reporter::ClashInfo;
 use clash_engine::CollisionEngine;
 use ifc_adapter::{IfcElement, load_ifc_elements};
-use parry3d_f64::math::Isometry;
+use parry3d_f64::math::Pose;
 use parry3d_f64::shape::Shape;
 use selector::Selector;
 use serde::{Deserialize, Serialize};
@@ -107,7 +107,7 @@ pub fn clash_detect_between_groups(
 ) -> Result<(i32, Vec<ClashInfo>)> {
     let mut clash_count = 0;
     let mut clash_infos = Vec::new();
-    let identity = Isometry::identity();
+    let identity = Pose::identity();
 
     for el1 in group_a {
         for el2 in group_b {
@@ -198,12 +198,12 @@ pub fn clash_detect(
 
     // Broad phase integration
     let mut aabbs = Vec::new();
-    let identity = Isometry::identity();
+    let identity = Pose::identity();
     for (idx, el) in all_elements.iter().enumerate() {
         aabbs.push((idx as u32, el.mesh.compute_aabb(&identity)));
     }
-    let bvh = CollisionEngine::build_broad_phase(aabbs);
-    let potential_clashes = CollisionEngine::broad_phase_query(&bvh);
+    let bvh = CollisionEngine::build_broad_phase(&aabbs);
+    let potential_clashes = CollisionEngine::broad_phase_query(&bvh, &aabbs);
 
     for (i_u32, j_u32) in potential_clashes {
         let i = i_u32 as usize;
