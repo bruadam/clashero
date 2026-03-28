@@ -96,24 +96,39 @@ function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_elements_globalId ON ifc_elements(globalId);
 
     CREATE TABLE IF NOT EXISTS clashes (
-      guid        TEXT PRIMARY KEY,
-      id          TEXT NOT NULL,
-      title       TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      status      TEXT NOT NULL DEFAULT 'open',
-      priority    TEXT NOT NULL DEFAULT 'none',
-      ruleId      TEXT NOT NULL DEFAULT '',
-      ifcGuidA    TEXT NOT NULL DEFAULT '',
-      ifcGuidB    TEXT NOT NULL DEFAULT '',
-      fileA       TEXT NOT NULL DEFAULT '',
-      fileB       TEXT NOT NULL DEFAULT '',
-      midpoint    TEXT NOT NULL DEFAULT '[0,0,0]',
-      viewpoint   TEXT NOT NULL DEFAULT '{}',
-      assignee    TEXT,
-      labels      TEXT NOT NULL DEFAULT '[]',
-      createdAt   TEXT NOT NULL
+      guid          TEXT PRIMARY KEY,
+      id            TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      description   TEXT NOT NULL DEFAULT '',
+      status        TEXT NOT NULL DEFAULT 'open',
+      priority      TEXT NOT NULL DEFAULT 'none',
+      ruleId        TEXT NOT NULL DEFAULT '',
+      ifcGuidA      TEXT NOT NULL DEFAULT '',
+      ifcGuidB      TEXT NOT NULL DEFAULT '',
+      fileA         TEXT NOT NULL DEFAULT '',
+      fileB         TEXT NOT NULL DEFAULT '',
+      midpoint      TEXT NOT NULL DEFAULT '[0,0,0]',
+      viewpoint     TEXT NOT NULL DEFAULT '{}',
+      assignee      TEXT,
+      labels        TEXT NOT NULL DEFAULT '[]',
+      createdAt     TEXT NOT NULL,
+      linearIssueId TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS linear_settings (
+      id          INTEGER PRIMARY KEY CHECK (id = 1),
+      accessToken TEXT NOT NULL,
+      workspaceId TEXT NOT NULL DEFAULT '',
+      teamId      TEXT NOT NULL DEFAULT '',
+      projectId   TEXT NOT NULL DEFAULT ''
     );
   `);
+
+  // Add linearIssueId column if it doesn't exist (migration for existing DBs)
+  const clashCols = _db.pragma("table_info(clashes)") as Array<{ name: string }>;
+  if (!clashCols.some((c) => c.name === "linearIssueId")) {
+    _db.exec("ALTER TABLE clashes ADD COLUMN linearIssueId TEXT");
+  }
 
   migrateLegacyJson();
 
@@ -354,6 +369,7 @@ function rowToClash(row: Record<string, unknown>): Clash {
     assignee: (row.assignee as string | null) ?? undefined,
     labels: JSON.parse(row.labels as string),
     createdAt: row.createdAt as string,
+    linearIssueId: (row.linearIssueId as string | null) ?? undefined,
   };
 }
 
@@ -383,11 +399,11 @@ export function insertClash(clash: Clash): void {
       `INSERT INTO clashes
          (guid, id, title, description, status, priority, ruleId,
           ifcGuidA, ifcGuidB, fileA, fileB, midpoint, viewpoint,
-          assignee, labels, createdAt)
+          assignee, labels, createdAt, linearIssueId)
        VALUES
          (@guid, @id, @title, @description, @status, @priority, @ruleId,
           @ifcGuidA, @ifcGuidB, @fileA, @fileB, @midpoint, @viewpoint,
-          @assignee, @labels, @createdAt)`
+          @assignee, @labels, @createdAt, @linearIssueId)`
     )
     .run({
       ...clash,
@@ -395,5 +411,59 @@ export function insertClash(clash: Clash): void {
       viewpoint: JSON.stringify(clash.viewpoint),
       labels: JSON.stringify(clash.labels),
       assignee: clash.assignee ?? null,
+      linearIssueId: clash.linearIssueId ?? null,
     });
+}
+
+export function setClashLinearIssueId(guid: string, linearIssueId: string): void {
+  getDb()
+    .prepare("UPDATE clashes SET linearIssueId = ? WHERE guid = ?")
+    .run(linearIssueId, guid);
+}
+
+export function updateClash(guid: string, patch: Partial<Clash>): void {
+  const allowed = ["title", "description", "status", "priority", "assignee", "labels", "linearIssueId"] as const;
+  const sets: string[] = [];
+  const values: Record<string, unknown> = { guid };
+  for (const key of allowed) {
+    if (key in patch) {
+      sets.push(`${key} = @${key}`);
+      const v = patch[key];
+      values[key] = key === "labels" ? JSON.stringify(v) : (v ?? null);
+    }
+  }
+  if (sets.length === 0) return;
+  getDb()
+    .prepare(`UPDATE clashes SET ${sets.join(", ")} WHERE guid = @guid`)
+    .run(values);
+}
+
+// ── Linear Settings ───────────────────────────────────────────────────────────
+
+export interface LinearSettings {
+  accessToken: string;
+  workspaceId: string;
+  teamId: string;
+  projectId: string;
+}
+
+export function getLinearSettings(): LinearSettings | null {
+  const row = getDb()
+    .prepare("SELECT accessToken, workspaceId, teamId, projectId FROM linear_settings WHERE id = 1")
+    .get() as LinearSettings | undefined;
+  return row ?? null;
+}
+
+export function saveLinearSettings(settings: LinearSettings): void {
+  getDb()
+    .prepare(
+      `INSERT INTO linear_settings (id, accessToken, workspaceId, teamId, projectId)
+       VALUES (1, @accessToken, @workspaceId, @teamId, @projectId)
+       ON CONFLICT(id) DO UPDATE SET
+         accessToken = excluded.accessToken,
+         workspaceId = excluded.workspaceId,
+         teamId      = excluded.teamId,
+         projectId   = excluded.projectId`
+    )
+    .run(settings);
 }

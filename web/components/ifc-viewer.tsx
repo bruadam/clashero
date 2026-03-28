@@ -7,7 +7,8 @@ import type * as FRAGS from "@thatopen/fragments";
 import type { Clash, ClashViewpoint } from "@/lib/types";
 import type { IfcModelEntry } from "@/components/model-manager";
 import type { BcfSelectedElement } from "@/components/bcf-create-dialog";
-import { X, Loader2, FilePlus } from "lucide-react";
+import { X, Loader2, FilePlus, ChevronDown } from "lucide-react";
+import { STATUS_META, PRIORITY_META } from "@/lib/types";
 
 const PRIORITY_COLORS: Record<string, number> = {
   urgent: 0xe24b4a,
@@ -68,6 +69,7 @@ interface IfcViewerProps {
   colorizeBy?: ColorizeBy;
   onColorizeByChange?: (v: ColorizeBy) => void;
   onCreateBcfIssue?: (elements: BcfSelectedElement[], viewpoint: ClashViewpoint) => void;
+  onBubbleRightClick?: (clash: Clash, x: number, y: number) => void;
 }
 
 type LoadingState = "idle" | "loading" | "done" | "error";
@@ -87,9 +89,28 @@ interface ViewerRefs {
   loadedFiles: Set<string>;
 }
 
-export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: colorizeByProp, onCreateBcfIssue }: IfcViewerProps) {
-  const [colorizeByInternal] = useState<ColorizeBy>("priority");
+export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: colorizeByProp, onColorizeByChange, onCreateBcfIssue, onBubbleRightClick }: IfcViewerProps) {
+  const [colorizeByInternal, setColorizeByInternal] = useState<ColorizeBy>("priority");
   const colorizeBy: ColorizeBy = colorizeByProp ?? colorizeByInternal;
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showColorPicker) return;
+    function onDown(e: MouseEvent) {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+        setShowColorPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showColorPicker]);
+
+  function setColorizeBy(v: ColorizeBy) {
+    setColorizeByInternal(v);
+    onColorizeByChange?.(v);
+    setShowColorPicker(false);
+  }
 
   // Multi-element selection for BCF issue creation
   const [bcfSelection, setBcfSelection] = useState<BcfSelectedElement[]>([]);
@@ -317,6 +338,12 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Re-colorize bubbles when colorizeBy or clashes change ─────────────────
+  useEffect(() => {
+    const { bubblesGroup } = refs.current;
+    if (bubblesGroup) placeBubbles(clashes, bubblesGroup, colorizeBy);
+  }, [clashes, colorizeBy]);
+
   // ── Theme ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const world = refs.current.world;
@@ -509,6 +536,37 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     []
   );
 
+  // ── Right-click on bubble → context menu ─────────────────────────────────
+  const handleCanvasContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const container = containerRef.current;
+      const { world, bubblesGroup } = refs.current;
+      if (!container || !world || !bubblesGroup || !onBubbleRightClick) return;
+
+      e.preventDefault();
+
+      const rect = container.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, world.camera.three);
+      const hits = raycaster.intersectObjects(bubblesGroup.children, false);
+      if (hits.length === 0) return;
+
+      const guid = hits[0].object.userData.clashGuid as string | undefined;
+      if (!guid) return;
+
+      const clash = clashes.find((c) => c.guid === guid);
+      if (!clash) return;
+
+      onBubbleRightClick(clash, e.clientX, e.clientY);
+    },
+    [clashes, onBubbleRightClick],
+  );
+
   // ── Build viewpoint from current camera ───────────────────────────────────
   const getCurrentViewpoint = useCallback((): ClashViewpoint => {
     const world = refs.current.world;
@@ -537,6 +595,7 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         ref={containerRef}
         className="w-full h-full"
         onClick={handleCanvasClick}
+        onContextMenu={handleCanvasContextMenu}
       />
 
       {/* Loading bar */}
@@ -566,27 +625,115 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         </div>
       )}
 
-      {/* Legend */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-3 text-[11px] text-white/55 bg-black/50 backdrop-blur-sm rounded px-3 py-1.5 select-none">
-        {selectedClash ? (
-          <>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#ff3b30] shrink-0" />
-              {selectedClash.fileA.replace("Building-", "").replace(".ifc", "")}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#007aff] shrink-0" />
-              {selectedClash.fileB.replace("Building-", "").replace(".ifc", "")}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#e24b4a]" />Urgent</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#f09595]" />High</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#ba7517]" />Medium</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#639922]" />Low</span>
-          </>
+      {/* Legend + color-by picker */}
+      <div className="absolute bottom-3 left-3 flex flex-col items-start gap-1.5">
+        {/* Color-by selector */}
+        {!selectedClash && (
+          <div className="relative" ref={colorPickerRef}>
+            <button
+              onClick={() => setShowColorPicker((v) => !v)}
+              className="flex items-center gap-1.5 text-[10px] text-white/40 hover:text-white/70 bg-black/40 backdrop-blur-sm rounded px-2 py-1 transition-colors select-none"
+            >
+              Color by
+              <span className="text-white/60 font-medium capitalize">
+                {typeof colorizeBy === "object" ? `date (${colorizeBy.range.replace("-", " ")})` : colorizeBy}
+              </span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+
+            {showColorPicker && (
+              <div className="absolute bottom-full mb-1 left-0 bg-popover border border-border rounded-md shadow-lg py-1 z-50 min-w-[160px]">
+                {(["priority", "status", "assignee", "rule"] as const).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => setColorizeBy(opt)}
+                    className={`w-full text-left px-3 py-1.5 text-xs capitalize hover:bg-accent/60 transition-colors flex items-center gap-2 ${colorizeBy === opt ? "text-foreground font-medium" : "text-foreground/60"}`}
+                  >
+                    {colorizeBy === opt && <span className="text-primary text-[10px]">✓</span>}
+                    {colorizeBy !== opt && <span className="w-3" />}
+                    {opt}
+                  </button>
+                ))}
+                <div className="border-t border-border my-1" />
+                <p className="px-3 py-1 text-[10px] text-muted-foreground/50 select-none">Date created</p>
+                {(["last-hour", "last-day", "last-week", "last-month", "this-year"] as const).map((range) => {
+                  const active = typeof colorizeBy === "object" && colorizeBy.range === range;
+                  return (
+                    <button
+                      key={range}
+                      onClick={() => setColorizeBy({ dateField: "created", range })}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-accent/60 transition-colors flex items-center gap-2 ${active ? "text-foreground font-medium" : "text-foreground/60"}`}
+                    >
+                      {active && <span className="text-primary text-[10px]">✓</span>}
+                      {!active && <span className="w-3" />}
+                      {range.replace("-", " ")}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
+
+        {/* Legend swatches */}
+        <div className="flex items-center gap-2.5 text-[11px] text-white/55 bg-black/50 backdrop-blur-sm rounded px-3 py-1.5 select-none">
+          {selectedClash ? (
+            <>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#ff3b30] shrink-0" />
+                {selectedClash.fileA.replace("Building-", "").replace(".ifc", "")}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#007aff] shrink-0" />
+                {selectedClash.fileB.replace("Building-", "").replace(".ifc", "")}
+              </span>
+            </>
+          ) : colorizeBy === "priority" ? (
+            <>
+              {Object.entries(PRIORITY_META).map(([k, m]) => (
+                <span key={k} className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color }} />
+                  {m.label}
+                </span>
+              ))}
+            </>
+          ) : colorizeBy === "status" ? (
+            <>
+              {Object.entries(STATUS_META).map(([k, m]) => (
+                <span key={k} className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color }} />
+                  {m.label}
+                </span>
+              ))}
+            </>
+          ) : colorizeBy === "assignee" || colorizeBy === "rule" ? (
+            (() => {
+              const items = colorizeBy === "assignee"
+                ? [...new Set(clashes.map((c) => c.assignee ?? "unassigned"))]
+                : [...new Set(clashes.map((c) => c.ruleId))];
+              return items.map((key) => (
+                <span key={key} className="flex items-center gap-1">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: `#${PALETTE[stableIndex(key, PALETTE.length)].toString(16).padStart(6, "0")}` }}
+                  />
+                  <span className="max-w-[80px] truncate">{key}</span>
+                </span>
+              ));
+            })()
+          ) : (
+            <>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full shrink-0 bg-[#22c55e]" />
+                In range
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full shrink-0 bg-[#374151]" />
+                Outside
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Hint */}

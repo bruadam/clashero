@@ -1,6 +1,7 @@
 "use client";
 
-import { Settings, LayoutList, Grid3X3, Globe, Sun, Moon } from "lucide-react";
+import { Globe, Sun, Moon, Settings2 } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
@@ -67,6 +68,11 @@ export function Topbar({ activeTab, onTabChange }: TopbarProps) {
             <Moon className="w-4 h-4" />
           )}
         </Button>
+        <Link href="/settings/linear">
+          <Button variant="ghost" size="icon" className="text-muted-foreground" title="Linear integration settings">
+            <Settings2 className="w-4 h-4" />
+          </Button>
+        </Link>
       </div>
     </header>
   );

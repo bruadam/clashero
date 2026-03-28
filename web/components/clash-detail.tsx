@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { X, ChevronLeft, ChevronRight, Send, Link2, Check, ChevronDown, ChevronRight as ChevronRightSmall, MessageSquare, Activity, Download } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Send, Link2, Check, ChevronDown, ChevronRight as ChevronRightSmall, MessageSquare, Activity, Download, ArrowUpToLine, ArrowDownToLine, ExternalLink } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { exportBcf, downloadBcf } from "@/lib/bcf-exporter";
 import ReactMarkdown from "react-markdown";
@@ -105,9 +105,45 @@ export function ClashDetail({
   const [preview, setPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [linearIssueId, setLinearIssueId] = useState(clash.linearIssueId);
+  const [linearIssueUrl, setLinearIssueUrl] = useState<string | null>(null);
+  const [linearIssueIdentifier, setLinearIssueIdentifier] = useState<string | null>(null);
+  const [linearPushing, setLinearPushing] = useState(false);
+  const [linearPulling, setLinearPulling] = useState(false);
+  const [linearError, setLinearError] = useState<string | null>(null);
+
+  const pushToLinear = useCallback(async () => {
+    setLinearPushing(true);
+    setLinearError(null);
+    try {
+      const res = await fetch(`/api/linear/sync/${clash.guid}`, { method: "POST" });
+      const data = await res.json() as { issue?: { id: string; url: string; identifier: string }; error?: string };
+      if (!res.ok || data.error) { setLinearError(data.error ?? "Push failed"); return; }
+      if (data.issue) {
+        setLinearIssueId(data.issue.id);
+        setLinearIssueUrl(data.issue.url);
+        setLinearIssueIdentifier(data.issue.identifier);
+      }
+    } finally {
+      setLinearPushing(false);
+    }
+  }, [clash.guid]);
+
+  const pullFromLinear = useCallback(async () => {
+    setLinearPulling(true);
+    setLinearError(null);
+    try {
+      const res = await fetch(`/api/linear/pull/${clash.guid}`, { method: "POST" });
+      const data = await res.json() as { applied?: { status: string }; error?: string };
+      if (!res.ok || data.error) { setLinearError(data.error ?? "Pull failed"); return; }
+      if (data.applied?.status) onStatusChange?.(data.applied.status as import("@/lib/types").ClashStatus);
+    } finally {
+      setLinearPulling(false);
+    }
+  }, [clash.guid, onStatusChange]);
 
   const copyLink = useCallback(() => {
-    const url = `${window.location.origin}/clash/${clash.id}`;
+    const url = `${window.location.origin}/clash/${clash.guid}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -175,9 +211,9 @@ export function ClashDetail({
         </button>
 
         <Link
-          href={`/clash/${clash.id}`}
+          href={`/clash/${clash.guid}`}
           className="text-[11px] text-muted-foreground hover:text-foreground transition-colors font-mono"
-          title={`/clash/${clash.id}`}
+          title={`/clash/${clash.guid}`}
         >
           {clash.id}
         </Link>
@@ -344,10 +380,57 @@ export function ClashDetail({
             </div>
 
             {/* Created */}
-            <div className="flex items-center min-h-[32px]">
+            <div className="flex items-center min-h-[32px] border-b border-border/50">
               <span className="w-24 text-[11px] text-muted-foreground shrink-0">Created</span>
               <span className="text-xs text-foreground/70">{formatDate(clash.createdAt)}</span>
             </div>
+
+            {/* Linear */}
+            <div className="flex items-center min-h-[32px]">
+              <span className="w-24 text-[11px] text-muted-foreground shrink-0">Linear</span>
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                {linearIssueId ? (
+                  <>
+                    {linearIssueUrl ? (
+                      <a
+                        href={linearIssueUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-primary hover:underline min-w-0"
+                      >
+                        <span className="truncate">{linearIssueIdentifier ?? linearIssueId}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                      </a>
+                    ) : (
+                      <span className="text-xs text-foreground/70 font-mono truncate">{linearIssueIdentifier ?? linearIssueId}</span>
+                    )}
+                    <button
+                      onClick={pullFromLinear}
+                      disabled={linearPulling}
+                      title="Pull status from Linear"
+                      className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-border hover:bg-accent transition-colors disabled:opacity-40"
+                    >
+                      <ArrowDownToLine className="w-3 h-3" />
+                      {linearPulling ? "Pulling…" : "Pull"}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={pushToLinear}
+                    disabled={linearPushing}
+                    title="Push to Linear as new issue"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border border-border hover:bg-accent transition-colors disabled:opacity-40"
+                  >
+                    <ArrowUpToLine className="w-3 h-3" />
+                    {linearPushing ? "Pushing…" : "Push to Linear"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {linearError && (
+              <p className="text-[10px] text-red-500 px-0.5 pb-1">{linearError}</p>
+            )}
           </div>
         </div>
 

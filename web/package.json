@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "snapshots": "node scripts/generate-snapshots.mjs",
-    "snapshots:guid": "node scripts/generate-snapshots.mjs --guid"
+    "snapshots:guid": "node scripts/generate-snapshots.mjs --guid",
+    "parse-ifc": "node scripts/parse-ifc.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "latest",

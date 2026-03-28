@@ -24,6 +24,7 @@ import type { IfcModelEntry } from "@/components/model-manager";
 import { BcfCreateDialog } from "@/components/bcf-create-dialog";
 import type { BcfSelectedElement } from "@/components/bcf-create-dialog";
 import type { ClashViewpoint } from "@/lib/types";
+import { BubbleContextMenu } from "@/components/bubble-context-menu";
 
 type Tab = "all" | "active" | "by-rule" | "overview";
 type FocusMode = "split" | "viewer" | "list";
@@ -157,6 +158,7 @@ export default function Home() {
   const [showModelManager, setShowModelManager] = useState(false);
   const [ifcModels, setIfcModels] = useState<IfcModelEntry[]>([]);
   const [bcfCreatePending, setBcfCreatePending] = useState<{ elements: BcfSelectedElement[]; viewpoint: ClashViewpoint } | null>(null);
+  const [bubbleCtxMenu, setBubbleCtxMenu] = useState<{ clash: Clash; x: number; y: number } | null>(null);
   const bcfInputRef = useRef<HTMLInputElement>(null);
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
@@ -306,35 +308,23 @@ export default function Home() {
         const current = prev.find((c) => c.guid === guid);
         if (current) {
           if (patch.status && patch.status !== current.status) {
-            postActivity(
-              guid,
-              "status_change",
-              "status",
-              current.status,
-              patch.status,
-            );
+            postActivity(guid, "status_change", "status", current.status, patch.status);
           }
           if (patch.priority && patch.priority !== current.priority) {
-            postActivity(
-              guid,
-              "priority_change",
-              "priority",
-              current.priority,
-              patch.priority,
-            );
+            postActivity(guid, "priority_change", "priority", current.priority, patch.priority);
           }
           if ("assignee" in patch && patch.assignee !== current.assignee) {
-            postActivity(
-              guid,
-              "assignee_change",
-              "assignee",
-              current.assignee ?? "",
-              patch.assignee ?? "",
-            );
+            postActivity(guid, "assignee_change", "assignee", current.assignee ?? "", patch.assignee ?? "");
           }
         }
         return prev.map((c) => (c.guid === guid ? { ...c, ...patch } : c));
       });
+      // Persist to DB
+      fetch(`/api/clashes/${guid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }).catch(() => { /* fire-and-forget */ });
     },
     [postActivity],
   );
@@ -347,22 +337,31 @@ export default function Home() {
       try {
         const buffer = await file.arrayBuffer();
         const imported = await parseBcf(buffer);
-        setClashes((prev) => {
-          const existingGuids = new Set(prev.map((c) => c.guid));
-          const newClashes = imported.filter((c) => !existingGuids.has(c.guid));
-          // Re-assign sequential IDs to avoid collisions
-          const offset = prev.length;
-          const renumbered = newClashes.map((c, i) => ({
-            ...c,
-            id: `CLH-${String(offset + i + 1).padStart(3, "0")}`,
-          }));
-          return [...prev, ...renumbered];
-        });
+
+        // Fetch current guids fresh to avoid stale closure
+        const currentRes = await fetch("/api/clashes");
+        const currentData = await currentRes.json() as { clashes: Clash[] };
+        const existingGuids = new Set(currentData.clashes.map((c: Clash) => c.guid));
+        const newClashes = imported.filter((c) => !existingGuids.has(c.guid));
+
+        // POST each new clash to persist in DB — the API assigns sequential IDs
+        const saved: Clash[] = [];
+        for (const clash of newClashes) {
+          const res = await fetch("/api/clashes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(clash),
+          });
+          if (res.ok) saved.push(await res.json() as Clash);
+        }
+
+        if (saved.length > 0) {
+          setClashes((prev) => [...prev, ...saved]);
+        }
       } catch (err) {
         console.error("BCF import failed:", err);
       } finally {
         setIsImporting(false);
-        // Reset so the same file can be re-imported if needed
         e.target.value = "";
       }
     },
@@ -374,11 +373,16 @@ export default function Home() {
     downloadBcf(blob, "clashero-export.bcf");
   }, [clashes]);
 
-  const handleBcfIssueCreated = useCallback((clash: Clash) => {
-    setClashes((prev) => {
-      const offset = prev.length;
-      return [...prev, { ...clash, id: `CLH-${String(offset + 1).padStart(3, "0")}` }];
+  const handleBcfIssueCreated = useCallback(async (clash: Clash) => {
+    const res = await fetch("/api/clashes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(clash),
     });
+    if (res.ok) {
+      const saved = await res.json() as Clash;
+      setClashes((prev) => [...prev, saved]);
+    }
   }, []);
 
   // Keyboard navigation
@@ -455,7 +459,20 @@ export default function Home() {
               onCreateBcfIssue={(elements, viewpoint) =>
                 setBcfCreatePending({ elements, viewpoint })
               }
+              onBubbleRightClick={(clash, x, y) => setBubbleCtxMenu({ clash, x, y })}
             />
+
+            {bubbleCtxMenu && (
+              <BubbleContextMenu
+                clash={bubbleCtxMenu.clash}
+                x={bubbleCtxMenu.x}
+                y={bubbleCtxMenu.y}
+                onClose={() => setBubbleCtxMenu(null)}
+                onStatusChange={(guid, s) => updateClash(guid, { status: s })}
+                onPriorityChange={(guid, p) => updateClash(guid, { priority: p })}
+                onAssigneeChange={(guid, a) => updateClash(guid, { assignee: a || undefined })}
+              />
+            )}
 
             {/* Model Manager slide-in panel */}
             {showModelManager && (
@@ -524,91 +541,92 @@ export default function Home() {
           </div>
         )}
 
-        {/* Right panel: issue list + detail */}
+        {/* Right panel: issue list + detail side by side */}
         {showList && (
           <div
-            className="shrink-0 flex flex-col overflow-hidden relative before:absolute before:left-0 before:top-3 before:bottom-3 before:w-px before:rounded-full before:bg-primary/15"
-            style={{ width: focusMode === "list" ? "100%" : listWidth }}
+            className="shrink-0 flex overflow-hidden relative before:absolute before:left-0 before:top-3 before:bottom-3 before:w-px before:rounded-full before:bg-primary/15"
+            style={{ width: focusMode === "list" ? "100%" : listWidth + (selectedClash ? 321 : 0) }}
           >
-            {selectedClash ? (
-              <ClashDetail
-                clash={selectedClash}
-                index={selectedIndex}
-                total={flatList.length}
-                onClose={() => setSelectedGuid(null)}
-                onPrev={goPrev}
-                onNext={goNext}
-                onStatusChange={(s) =>
-                  updateClash(selectedClash.guid, { status: s })
-                }
-                onPriorityChange={(p) =>
-                  updateClash(selectedClash.guid, { priority: p })
-                }
-                onAssigneeChange={(a) =>
-                  updateClash(selectedClash.guid, { assignee: a })
-                }
-              />
-            ) : (
-              <>
-                {/* List header */}
-                <div className="px-3 py-2 shrink-0 flex items-center gap-2">
-                  <h2 className="text-[11px] font-semibold text-foreground/60 tracking-tight">
-                    {activeTab === "all"
-                      ? "All Issues"
-                      : activeTab === "active"
-                        ? "Active"
-                        : activeTab === "by-rule"
-                          ? "By Rule"
-                          : "Overview"}
-                  </h2>
-                  <span className="text-[10px] text-muted-foreground/50 font-medium">
-                    {filteredClashes.length}
-                  </span>
-                  <div className="flex-1" />
-                  {/* Display options toggle */}
-                  <div className="relative">
-                    <button
-                      ref={filterBtnRef}
-                      onClick={() => setShowDisplayPanel((v) => !v)}
-                      className={`p-1 rounded transition-colors ${showDisplayPanel ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
-                      title="Display options"
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5" />
-                    </button>
-                    <DisplayOptionsPanel
-                      open={showDisplayPanel}
-                      options={displayOptions}
-                      onChange={setDisplayOptions}
-                      onClose={() => setShowDisplayPanel(false)}
-                      anchorRef={filterBtnRef}
-                    />
-                  </div>
-                  {/* Focus list toggle */}
+            {/* Issue list — always visible */}
+            <div className="flex flex-col overflow-hidden" style={{ width: focusMode === "list" ? (selectedClash ? "calc(100% - 321px)" : "100%") : listWidth }}>
+              {/* List header */}
+              <div className="px-3 py-2 shrink-0 flex items-center gap-2">
+                <h2 className="text-[11px] font-semibold text-foreground/60 tracking-tight">
+                  {activeTab === "all"
+                    ? "All Issues"
+                    : activeTab === "active"
+                      ? "Active"
+                      : activeTab === "by-rule"
+                        ? "By Rule"
+                        : "Overview"}
+                </h2>
+                <span className="text-[10px] text-muted-foreground/50 font-medium">
+                  {filteredClashes.length}
+                </span>
+                <div className="flex-1" />
+                {/* Display options toggle */}
+                <div className="relative">
                   <button
-                    onClick={() =>
-                      setFocusMode(focusMode === "list" ? "split" : "list")
-                    }
-                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                    title={
-                      focusMode === "list"
-                        ? "Split view"
-                        : "Focus list (hide viewer)"
-                    }
+                    ref={filterBtnRef}
+                    onClick={() => setShowDisplayPanel((v) => !v)}
+                    className={`p-1 rounded transition-colors ${showDisplayPanel ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
+                    title="Display options"
                   >
-                    {focusMode === "list" ? <IconCompress /> : <IconExpand />}
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
                   </button>
+                  <DisplayOptionsPanel
+                    open={showDisplayPanel}
+                    options={displayOptions}
+                    onChange={setDisplayOptions}
+                    onClose={() => setShowDisplayPanel(false)}
+                    anchorRef={filterBtnRef}
+                  />
                 </div>
-                <div className="mx-3 h-px rounded-full bg-primary/15 shrink-0" />
+                {/* Focus list toggle */}
+                <button
+                  onClick={() =>
+                    setFocusMode(focusMode === "list" ? "split" : "list")
+                  }
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title={
+                    focusMode === "list"
+                      ? "Split view"
+                      : "Focus list (hide viewer)"
+                  }
+                >
+                  {focusMode === "list" ? <IconCompress /> : <IconExpand />}
+                </button>
+              </div>
+              <div className="mx-3 h-px rounded-full bg-primary/15 shrink-0" />
 
-                <div className="flex-1 overflow-hidden">
-                  <ScrollArea className="h-full">
-                    {activeTab === "by-rule"
-                      ? Object.entries(groupedByRule).map(
-                          ([ruleId, ruleClashes]) => (
-                            <FlatGroup
-                              key={ruleId}
-                              label={ruleId}
-                              clashes={ruleClashes}
+              <div className="flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  {activeTab === "by-rule"
+                    ? Object.entries(groupedByRule).map(
+                        ([ruleId, ruleClashes]) => (
+                          <FlatGroup
+                            key={ruleId}
+                            label={ruleId}
+                            clashes={ruleClashes}
+                            selectedGuid={selectedGuid}
+                            onSelectClash={setSelectedGuid}
+                            onStatusChange={(guid, s) =>
+                              updateClash(guid, { status: s })
+                            }
+                            onPriorityChange={(guid, p) =>
+                              updateClash(guid, { priority: p })
+                            }
+                            displayOptions={displayOptions}
+                          />
+                        ),
+                      )
+                    : displayOptions.groupBy === "status"
+                      ? STATUS_ORDER.map((status) =>
+                          groupedByStatus[status] ? (
+                            <IssueGroup
+                              key={status}
+                              status={status}
+                              clashes={groupedByStatus[status]!}
                               selectedGuid={selectedGuid}
                               onSelectClash={setSelectedGuid}
                               onStatusChange={(guid, s) =>
@@ -619,61 +637,61 @@ export default function Home() {
                               }
                               displayOptions={displayOptions}
                             />
-                          ),
+                          ) : null,
                         )
-                      : displayOptions.groupBy === "status"
-                        ? STATUS_ORDER.map((status) =>
-                            groupedByStatus[status] ? (
-                              <IssueGroup
-                                key={status}
-                                status={status}
-                                clashes={groupedByStatus[status]!}
+                      : displayOptions.groupBy === "priority"
+                        ? (
+                            [
+                              "urgent",
+                              "high",
+                              "medium",
+                              "low",
+                              "none",
+                            ] as const
+                          ).map((p) =>
+                            groupedByPriority[p] ? (
+                              <FlatGroup
+                                key={p}
+                                label={PRIORITY_META[p].label}
+                                clashes={groupedByPriority[p]!}
                                 selectedGuid={selectedGuid}
                                 onSelectClash={setSelectedGuid}
                                 onStatusChange={(guid, s) =>
                                   updateClash(guid, { status: s })
                                 }
-                                onPriorityChange={(guid, p) =>
-                                  updateClash(guid, { priority: p })
+                                onPriorityChange={(guid, p2) =>
+                                  updateClash(guid, { priority: p2 })
                                 }
                                 displayOptions={displayOptions}
                               />
                             ) : null,
                           )
-                        : displayOptions.groupBy === "priority"
-                          ? (
-                              [
-                                "urgent",
-                                "high",
-                                "medium",
-                                "low",
-                                "none",
-                              ] as const
-                            ).map((p) =>
-                              groupedByPriority[p] ? (
+                        : displayOptions.groupBy === "rule"
+                          ? Object.entries(groupedByRule).map(
+                              ([ruleId, ruleClashes]) => (
                                 <FlatGroup
-                                  key={p}
-                                  label={PRIORITY_META[p].label}
-                                  clashes={groupedByPriority[p]!}
+                                  key={ruleId}
+                                  label={ruleId}
+                                  clashes={ruleClashes}
                                   selectedGuid={selectedGuid}
                                   onSelectClash={setSelectedGuid}
                                   onStatusChange={(guid, s) =>
                                     updateClash(guid, { status: s })
                                   }
-                                  onPriorityChange={(guid, p2) =>
-                                    updateClash(guid, { priority: p2 })
+                                  onPriorityChange={(guid, p) =>
+                                    updateClash(guid, { priority: p })
                                   }
                                   displayOptions={displayOptions}
                                 />
-                              ) : null,
+                              ),
                             )
-                          : displayOptions.groupBy === "rule"
-                            ? Object.entries(groupedByRule).map(
-                                ([ruleId, ruleClashes]) => (
+                          : displayOptions.groupBy === "assignee"
+                            ? Object.entries(groupedByAssignee).map(
+                                ([assignee, assigneeClashes]) => (
                                   <FlatGroup
-                                    key={ruleId}
-                                    label={ruleId}
-                                    clashes={ruleClashes}
+                                    key={assignee}
+                                    label={assignee}
+                                    clashes={assigneeClashes}
                                     selectedGuid={selectedGuid}
                                     onSelectClash={setSelectedGuid}
                                     onStatusChange={(guid, s) =>
@@ -686,13 +704,13 @@ export default function Home() {
                                   />
                                 ),
                               )
-                            : displayOptions.groupBy === "assignee"
-                              ? Object.entries(groupedByAssignee).map(
-                                  ([assignee, assigneeClashes]) => (
+                            : displayOptions.groupBy === "model"
+                              ? Object.entries(groupedByModel).map(
+                                  ([model, modelClashes]) => (
                                     <FlatGroup
-                                      key={assignee}
-                                      label={assignee}
-                                      clashes={assigneeClashes}
+                                      key={model}
+                                      label={model}
+                                      clashes={modelClashes}
                                       selectedGuid={selectedGuid}
                                       onSelectClash={setSelectedGuid}
                                       onStatusChange={(guid, s) =>
@@ -705,85 +723,91 @@ export default function Home() {
                                     />
                                   ),
                                 )
-                              : displayOptions.groupBy === "model"
-                                ? Object.entries(groupedByModel).map(
-                                    ([model, modelClashes]) => (
-                                      <FlatGroup
-                                        key={model}
-                                        label={model}
-                                        clashes={modelClashes}
-                                        selectedGuid={selectedGuid}
-                                        onSelectClash={setSelectedGuid}
-                                        onStatusChange={(guid, s) =>
-                                          updateClash(guid, { status: s })
-                                        }
-                                        onPriorityChange={(guid, p) =>
-                                          updateClash(guid, { priority: p })
-                                        }
-                                        displayOptions={displayOptions}
-                                      />
-                                    ),
-                                  )
-                                : // No grouping — flat list
-                                  filteredClashes.map((clash) => (
-                                    <IssueRow
-                                      key={clash.guid}
-                                      clash={clash}
-                                      selected={selectedGuid === clash.guid}
-                                      onClick={() =>
-                                        setSelectedGuid(clash.guid)
-                                      }
-                                      onStatusChange={(s) =>
-                                        updateClash(clash.guid, { status: s })
-                                      }
-                                      onPriorityChange={(p) =>
-                                        updateClash(clash.guid, { priority: p })
-                                      }
-                                      displayOptions={displayOptions}
-                                    />
-                                  ))}
-                  </ScrollArea>
-                </div>
+                              : // No grouping — flat list
+                                filteredClashes.map((clash) => (
+                                  <IssueRow
+                                    key={clash.guid}
+                                    clash={clash}
+                                    selected={selectedGuid === clash.guid}
+                                    onClick={() =>
+                                      setSelectedGuid(clash.guid)
+                                    }
+                                    onStatusChange={(s) =>
+                                      updateClash(clash.guid, { status: s })
+                                    }
+                                    onPriorityChange={(p) =>
+                                      updateClash(clash.guid, { priority: p })
+                                    }
+                                    displayOptions={displayOptions}
+                                  />
+                                ))}
+                </ScrollArea>
+              </div>
 
-                {/* Import from BCF */}
-                <input
-                  ref={bcfInputRef}
-                  type="file"
-                  accept=".bcf,.bcfzip"
-                  className="hidden"
-                  onChange={handleBcfImport}
-                />
-                <div className="mx-3 h-px rounded-full bg-primary/15 shrink-0" />
-                <div className="px-3 py-2 shrink-0 flex gap-1.5">
-                  <button
-                    onClick={() => bcfInputRef.current?.click()}
-                    disabled={isImporting}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                  >
-                    <Upload className="w-3 h-3" />
-                    {isImporting ? "Importing…" : "Import BCF"}
-                  </button>
-                  <button
-                    onClick={handleBcfExportAll}
-                    disabled={clashes.length === 0}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                    title="Export all issues as BCF"
-                  >
-                    <Download className="w-3 h-3" />
-                    Export BCF
-                  </button>
-                </div>
+              {/* Import from BCF */}
+              <input
+                ref={bcfInputRef}
+                type="file"
+                accept=".bcf,.bcfzip"
+                className="hidden"
+                onChange={handleBcfImport}
+              />
+              <div className="mx-3 h-px rounded-full bg-primary/15 shrink-0" />
+              <div className="px-3 py-2 shrink-0 flex gap-1.5">
+                <button
+                  onClick={() => bcfInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  <Upload className="w-3 h-3" />
+                  {isImporting ? "Importing…" : "Import BCF"}
+                </button>
+                <button
+                  onClick={handleBcfExportAll}
+                  disabled={clashes.length === 0}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  title="Export all issues as BCF"
+                >
+                  <Download className="w-3 h-3" />
+                  Export BCF
+                </button>
+              </div>
 
-                <div className="mx-3 h-px rounded-full bg-primary/15 shrink-0" />
-                {/* Status bar */}
-                <div className="px-4 py-1.5 text-[11px] text-muted-foreground shrink-0 flex items-center gap-2">
-                  <span>
-                    models/: {ifcModels.length > 0 ? ifcModels.length : 3} files
-                  </span>
-                  <span>·</span>
-                  <span>data/: {clashes.length} clashes</span>
-                  <span>·</span>
-                  <span className="text-amber-500">{totalVisible} active</span>
+              <div className="mx-3 h-px rounded-full bg-primary/15 shrink-0" />
+              {/* Status bar */}
+              <div className="px-4 py-1.5 text-[11px] text-muted-foreground shrink-0 flex items-center gap-2">
+                <span>
+                  models/: {ifcModels.length > 0 ? ifcModels.length : 3} files
+                </span>
+                <span>·</span>
+                <span>data/: {clashes.length} clashes</span>
+                <span>·</span>
+                <span className="text-amber-500">{totalVisible} active</span>
+              </div>
+            </div>
+
+            {/* Detail panel — slides in when an issue is selected */}
+            {selectedClash && (
+              <>
+                <div className="w-px shrink-0 bg-border" />
+                <div className="w-80 shrink-0 flex flex-col overflow-hidden">
+                  <ClashDetail
+                    clash={selectedClash}
+                    index={selectedIndex}
+                    total={flatList.length}
+                    onClose={() => setSelectedGuid(null)}
+                    onPrev={goPrev}
+                    onNext={goNext}
+                    onStatusChange={(s) =>
+                      updateClash(selectedClash.guid, { status: s })
+                    }
+                    onPriorityChange={(p) =>
+                      updateClash(selectedClash.guid, { priority: p })
+                    }
+                    onAssigneeChange={(a) =>
+                      updateClash(selectedClash.guid, { assignee: a })
+                    }
+                  />
                 </div>
               </>
             )}
