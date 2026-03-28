@@ -3,11 +3,16 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import type * as OBC from "@thatopen/components";
+import type * as OBCF from "@thatopen/components-front";
 import type * as FRAGS from "@thatopen/fragments";
 import type { Clash, ClashViewpoint } from "@/lib/types";
 import type { IfcModelEntry } from "@/components/model-manager";
 import type { BcfSelectedElement } from "@/components/bcf-create-dialog";
-import { X, Loader2, FilePlus, ChevronDown } from "lucide-react";
+import {
+  X, Loader2, FilePlus, ChevronDown,
+  Maximize2, Grid3X3, Eye, EyeOff, Ruler, Scissors, RotateCcw,
+  Box, Sun,
+} from "lucide-react";
 import { STATUS_META, PRIORITY_META } from "@/lib/types";
 
 const PRIORITY_COLORS: Record<string, number> = {
@@ -87,6 +92,9 @@ interface ViewerRefs {
   grid: THREE.GridHelper | null;
   // track loaded filenames
   loadedFiles: Set<string>;
+  // tools
+  lengthMeasurement: OBCF.LengthMeasurement | null;
+  clipper: OBC.Clipper | null;
 }
 
 export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: colorizeByProp, onColorizeByChange, onCreateBcfIssue, onBubbleRightClick }: IfcViewerProps) {
@@ -124,7 +132,14 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     highlightGroup: null,
     grid: null,
     loadedFiles: new Set(),
+    lengthMeasurement: null,
+    clipper: null,
   });
+
+  // ── Toolbox state ──────────────────────────────────────────────────────────
+  const [activeTool, setActiveTool] = useState<"none" | "measure" | "clip">("none");
+  const [wireframe, setWireframe] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
 
   const [loadingState, setLoadingState] = useState<LoadingState>("idle");
   const [loadedCount, setLoadedCount] = useState(0);
@@ -219,6 +234,20 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         wasm: { path: "/wasm/", absolute: true },
       });
 
+      // ── OBCF tools ────────────────────────────────────────────────────────
+      const OBCFRuntime = await import("@thatopen/components-front");
+      if (disposed) return;
+
+      const lengthMeasurement = components.get(OBCFRuntime.LengthMeasurement);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (lengthMeasurement as any).world = world;
+      lengthMeasurement.enabled = false;
+      refs.current.lengthMeasurement = lengthMeasurement as unknown as OBCF.LengthMeasurement;
+
+      const clipper = components.get(OBCRuntime.Clipper);
+      clipper.enabled = false;
+      refs.current.clipper = clipper;
+
       cleanupFn = () => {
         ro.disconnect();
         URL.revokeObjectURL(workerURL);
@@ -244,6 +273,8 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         highlightGroup: null,
         grid: null,
         loadedFiles: new Set(),
+        lengthMeasurement: null,
+        clipper: null,
       };
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -586,6 +617,89 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     };
   }, []);
 
+  // ── Tool handlers ──────────────────────────────────────────────────────────
+  const handleFitView = useCallback(() => {
+    const { world, fragments } = refs.current;
+    if (world && fragments) fitCameraToModels(world, fragments);
+  }, []);
+
+  const handleToggleWireframe = useCallback(() => {
+    const { fragments } = refs.current;
+    setWireframe((prev) => {
+      const next = !prev;
+      if (fragments?.initialized) {
+        for (const model of fragments.core.models.list.values()) {
+          model.object.traverse((child) => {
+            if (!(child instanceof THREE.Mesh)) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((m) => { (m as THREE.MeshLambertMaterial).wireframe = next; });
+          });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleGrid = useCallback(() => {
+    const { grid } = refs.current;
+    setShowGrid((prev) => {
+      const next = !prev;
+      if (grid) grid.visible = next;
+      return next;
+    });
+  }, []);
+
+  const handleToggleMeasure = useCallback(() => {
+    const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean; create: () => void } | null;
+    setActiveTool((prev) => {
+      const next = prev === "measure" ? "none" : "measure";
+      // disable clipper if switching to measure
+      const clipper = refs.current.clipper;
+      if (clipper) clipper.enabled = false;
+      if (lm) lm.enabled = next === "measure";
+      return next;
+    });
+  }, []);
+
+  const handleToggleClip = useCallback(() => {
+    const { clipper, world } = refs.current;
+    setActiveTool((prev) => {
+      const next = prev === "clip" ? "none" : "clip";
+      // disable measure if switching to clip
+      const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean } | null;
+      if (lm) lm.enabled = false;
+      if (clipper) {
+        clipper.enabled = next === "clip";
+        if (next === "clip" && world) {
+          // Create a clipping plane on double-click via the clipper's built-in handler
+          clipper.visible = true;
+        } else if (clipper) {
+          clipper.deleteAll();
+          clipper.visible = false;
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const handleResetTools = useCallback(() => {
+    const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean; deleteAll: () => void } | null;
+    const clipper = refs.current.clipper;
+    if (lm) { lm.enabled = false; lm.deleteAll(); }
+    if (clipper) { clipper.enabled = false; clipper.deleteAll(); clipper.visible = false; }
+    setActiveTool("none");
+  }, []);
+
+  // Forward double-click to clipper / length measurement create
+  const handleCanvasDoubleClick = useCallback(() => {
+    const { clipper, world } = refs.current;
+    const lm = refs.current.lengthMeasurement as unknown as { enabled: boolean; create: () => void } | null;
+    if (lm?.enabled) { lm.create(); return; }
+    if (clipper?.enabled && world) {
+      clipper.create(world as Parameters<typeof clipper.create>[0]);
+    }
+  }, []);
+
   const bgClass = theme === "dark" ? "bg-[#090910]" : "bg-white";
   const overlayBgClass = theme === "dark" ? "bg-[#090910]/80" : "bg-white/80";
 
@@ -595,6 +709,7 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         ref={containerRef}
         className="w-full h-full"
         onClick={handleCanvasClick}
+        onDoubleClick={handleCanvasDoubleClick}
         onContextMenu={handleCanvasContextMenu}
       />
 
@@ -781,6 +896,147 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
           >
             <X className="w-3 h-3" />
           </button>
+        </div>
+      )}
+
+      {/* Vertical toolbox */}
+      <ViewerToolbox
+        activeTool={activeTool}
+        wireframe={wireframe}
+        showGrid={showGrid}
+        onFitView={handleFitView}
+        onToggleWireframe={handleToggleWireframe}
+        onToggleGrid={handleToggleGrid}
+        onToggleMeasure={handleToggleMeasure}
+        onToggleClip={handleToggleClip}
+        onReset={handleResetTools}
+      />
+    </div>
+  );
+}
+
+// ── Vertical Toolbox ──────────────────────────────────────────────────────────
+
+interface ToolboxProps {
+  activeTool: "none" | "measure" | "clip";
+  wireframe: boolean;
+  showGrid: boolean;
+  onFitView: () => void;
+  onToggleWireframe: () => void;
+  onToggleGrid: () => void;
+  onToggleMeasure: () => void;
+  onToggleClip: () => void;
+  onReset: () => void;
+}
+
+function ViewerToolbox({
+  activeTool,
+  wireframe,
+  showGrid,
+  onFitView,
+  onToggleWireframe,
+  onToggleGrid,
+  onToggleMeasure,
+  onToggleClip,
+  onReset,
+}: ToolboxProps) {
+  const tools: Array<{
+    id: string;
+    icon: React.ReactNode;
+    tooltip: string;
+    active?: boolean;
+    onClick: () => void;
+    separator?: boolean;
+  }> = [
+    {
+      id: "fit",
+      icon: <Maximize2 className="w-3.5 h-3.5" />,
+      tooltip: "Fit to view",
+      onClick: onFitView,
+    },
+    {
+      id: "grid",
+      icon: <Grid3X3 className="w-3.5 h-3.5" />,
+      tooltip: showGrid ? "Hide grid" : "Show grid",
+      active: showGrid,
+      onClick: onToggleGrid,
+    },
+    {
+      id: "wireframe",
+      icon: <Box className="w-3.5 h-3.5" />,
+      tooltip: wireframe ? "Solid view" : "Wireframe view",
+      active: wireframe,
+      onClick: onToggleWireframe,
+      separator: true,
+    },
+    {
+      id: "measure",
+      icon: <Ruler className="w-3.5 h-3.5" />,
+      tooltip: activeTool === "measure" ? "Stop measuring (dbl-click to place)" : "Length measurement (dbl-click to place)",
+      active: activeTool === "measure",
+      onClick: onToggleMeasure,
+    },
+    {
+      id: "clip",
+      icon: <Scissors className="w-3.5 h-3.5" />,
+      tooltip: activeTool === "clip" ? "Remove clipping planes" : "Section plane (dbl-click to place)",
+      active: activeTool === "clip",
+      onClick: onToggleClip,
+      separator: true,
+    },
+    {
+      id: "reset",
+      icon: <RotateCcw className="w-3.5 h-3.5" />,
+      tooltip: "Clear measurements & clips",
+      onClick: onReset,
+    },
+  ];
+
+  return (
+    <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-0.5 bg-black/50 backdrop-blur-sm border border-white/10 rounded-lg p-1">
+      {tools.map((tool) => (
+        <div key={tool.id} className="flex flex-col items-center">
+          {tool.separator && <div className="w-4 h-px bg-white/10 my-1" />}
+          <ToolButton
+            icon={tool.icon}
+            tooltip={tool.tooltip}
+            active={tool.active}
+            onClick={tool.onClick}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ToolButton({
+  icon,
+  tooltip,
+  active,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  tooltip: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  const [showTip, setShowTip] = useState(false);
+
+  return (
+    <div className="relative group" onMouseEnter={() => setShowTip(true)} onMouseLeave={() => setShowTip(false)}>
+      <button
+        onClick={onClick}
+        className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${
+          active
+            ? "bg-primary/80 text-primary-foreground"
+            : "text-white/50 hover:text-white hover:bg-white/10"
+        }`}
+      >
+        {icon}
+      </button>
+      {showTip && (
+        <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 whitespace-nowrap bg-popover border border-border text-foreground text-[10px] rounded px-2 py-1 shadow-lg pointer-events-none z-50">
+          {tooltip}
         </div>
       )}
     </div>
