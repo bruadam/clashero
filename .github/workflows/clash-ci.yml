@@ -1,0 +1,43 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ "main", "stage" ]
+    paths:
+      - 'clash/**'
+      - '.github/workflows/clash-ci.yml'
+  pull_request:
+    branches: [ "main", "stage" ]
+    paths:
+      - 'clash/**'
+      - '.github/workflows/clash-ci.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check formatting
+        working-directory: ./clash
+        run: cargo fmt --check
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build
+        working-directory: ./clash
+        run: cargo build --verbose
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: 'true'
+      - name: Run tests
+        working-directory: ./clash
+        run: cargo test --verbose
