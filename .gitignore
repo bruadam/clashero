@@ -1,2 +1,6 @@
 .junie
 .idea
+.claude
+.vs
+mcp-server/dist
+mcp-server/node_modules
