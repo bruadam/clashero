@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { DUMMY_CLASHES, STATUS_ORDER } from "@/lib/dummy-clashes";
+import { STATUS_ORDER } from "@/lib/dummy-clashes";
 import type { Clash, ClashStatus, ClashPriority } from "@/lib/types";
 import { PRIORITY_META } from "@/lib/types";
 import { Topbar } from "@/components/topbar";
@@ -13,7 +13,8 @@ import { useTheme } from "@/components/theme-provider";
 import { DisplayOptionsPanel, DEFAULT_DISPLAY_OPTIONS } from "@/components/display-options-panel";
 import type { DisplayOptions } from "@/components/display-options-panel";
 import { IssueRow } from "@/components/issue-row";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, Upload } from "lucide-react";
+import { parseBcf } from "@/lib/bcf-parser";
 
 type Tab = "all" | "active" | "by-rule" | "overview";
 type FocusMode = "split" | "viewer" | "list";
@@ -89,15 +90,26 @@ function IconCompress({ className }: { className?: string }) {
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [selectedGuid, setSelectedGuid] = useState<string | null>(null);
-  const [clashes, setClashes] = useState<Clash[]>(DUMMY_CLASHES);
+  const [clashes, setClashes] = useState<Clash[]>([]);
   const [focusMode, setFocusMode] = useState<FocusMode>("split");
   const [listWidth, setListWidth] = useState(420);
   const [displayOptions, setDisplayOptions] = useState<DisplayOptions>(DEFAULT_DISPLAY_OPTIONS);
   const [showDisplayPanel, setShowDisplayPanel] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const bcfInputRef = useRef<HTMLInputElement>(null);
   const isDraggingRef = useRef(false);
   const startXRef = useRef(0);
   const startWidthRef = useRef(420);
+  const filterBtnRef = useRef<HTMLButtonElement>(null);
   const { toggle: toggleTheme } = useTheme();
+
+  // Load clashes from BCF (falls back to dummy data when report.bcf is absent)
+  useEffect(() => {
+    fetch("/api/clashes")
+      .then((r) => r.json())
+      .then((data: { clashes: Clash[] }) => setClashes(data.clashes))
+      .catch(() => {/* silently keep empty list */});
+  }, []);
 
   const selectedClash = useMemo(
     () => clashes.find((c) => c.guid === selectedGuid) ?? null,
@@ -230,6 +242,36 @@ export default function Home() {
       });
     },
     [postActivity]
+  );
+
+  const handleBcfImport = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setIsImporting(true);
+      try {
+        const buffer = await file.arrayBuffer();
+        const imported = await parseBcf(buffer);
+        setClashes((prev) => {
+          const existingGuids = new Set(prev.map((c) => c.guid));
+          const newClashes = imported.filter((c) => !existingGuids.has(c.guid));
+          // Re-assign sequential IDs to avoid collisions
+          const offset = prev.length;
+          const renumbered = newClashes.map((c, i) => ({
+            ...c,
+            id: `CLH-${String(offset + i + 1).padStart(3, "0")}`,
+          }));
+          return [...prev, ...renumbered];
+        });
+      } catch (err) {
+        console.error("BCF import failed:", err);
+      } finally {
+        setIsImporting(false);
+        // Reset so the same file can be re-imported if needed
+        e.target.value = "";
+      }
+    },
+    []
   );
 
   // Keyboard navigation
@@ -372,13 +414,23 @@ export default function Home() {
                   <span className="text-xs text-muted-foreground ml-1">{filteredClashes.length}</span>
                   <div className="flex-1" />
                   {/* Display options toggle */}
-                  <button
-                    onClick={() => setShowDisplayPanel((v) => !v)}
-                    className={`p-1 rounded transition-colors ${showDisplayPanel ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
-                    title="Display options"
-                  >
-                    <SlidersHorizontal className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="relative">
+                    <button
+                      ref={filterBtnRef}
+                      onClick={() => setShowDisplayPanel((v) => !v)}
+                      className={`p-1 rounded transition-colors ${showDisplayPanel ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
+                      title="Display options"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                    <DisplayOptionsPanel
+                      open={showDisplayPanel}
+                      options={displayOptions}
+                      onChange={setDisplayOptions}
+                      onClose={() => setShowDisplayPanel(false)}
+                      anchorRef={filterBtnRef}
+                    />
+                  </div>
                   {/* Focus list toggle */}
                   <button
                     onClick={() => setFocusMode(focusMode === "list" ? "split" : "list")}
@@ -389,7 +441,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                <div className="relative flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden">
                   <ScrollArea className="h-full">
                     {activeTab === "by-rule" ? (
                       // Legacy "By Rule" tab keeps its own grouping
@@ -495,14 +547,25 @@ export default function Home() {
                       ))
                     )}
                   </ScrollArea>
+                </div>
 
-                  {/* Display options panel overlay */}
-                  <DisplayOptionsPanel
-                    open={showDisplayPanel}
-                    options={displayOptions}
-                    onChange={setDisplayOptions}
-                    onClose={() => setShowDisplayPanel(false)}
-                  />
+                {/* Import from BCF */}
+                <input
+                  ref={bcfInputRef}
+                  type="file"
+                  accept=".bcf,.bcfzip"
+                  className="hidden"
+                  onChange={handleBcfImport}
+                />
+                <div className="px-3 py-2 border-t border-border shrink-0">
+                  <button
+                    onClick={() => bcfInputRef.current?.click()}
+                    disabled={isImporting}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  >
+                    <Upload className="w-3 h-3" />
+                    {isImporting ? "Importing…" : "Import from BCF"}
+                  </button>
                 </div>
 
                 {/* Status bar */}
