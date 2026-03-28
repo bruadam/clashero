@@ -6,6 +6,15 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+// Compute the repo root from the location of this file (mcp-server/src/index.ts)
+// so we can find the models/ folder without the user having to specify a path.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// src/ → mcp-server/ → repo root
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
+const DEFAULT_MODELS_DIR = path.join(REPO_ROOT, "models");
 
 // ---------------------------------------------------------------------------
 // Server definition
@@ -91,12 +100,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "list_models",
         description:
-          "List all IFC models currently registered for this project. " +
-          "Call this to see what models and disciplines are available before " +
-          "generating clash rules or running clash detection.",
+          "ALWAYS call this first when the user mentions models, IFC files, or wants to " +
+          "start clash detection — even if they have not specified a path. " +
+          "Shows all registered models AND scans the repo's models/ folder for any " +
+          "unregistered IFC files, inferring their discipline codes from the filename. " +
+          "Use auto_register to register all discovered files in one step.",
         inputSchema: {
           type: "object",
-          properties: {},
+          properties: {
+            directory: {
+              type: "string",
+              description:
+                "Extra directory to scan for IFC files. The repo models/ folder is " +
+                "always scanned automatically — only provide this for additional locations.",
+            },
+            auto_register: {
+              type: "boolean",
+              description:
+                "If true, automatically register all unregistered IFC files found. " +
+                "Default false — show the list to the user for confirmation first.",
+            },
+          },
         },
       },
       {
@@ -295,27 +319,74 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // --- list_models ----------------------------------------------------------
   if (name === "list_models") {
-    const models = readModels();
-    if (models.length === 0) {
+    const registered = readModels();
+    const autoRegister = (args?.auto_register as boolean) ?? false;
+
+    // Scan models/ folder (and any extra directory) for IFC files
+    const dirsToScan = [DEFAULT_MODELS_DIR];
+    if (args?.directory) dirsToScan.push(args.directory as string);
+
+    const inferDiscipline = (filePath: string): string => {
+      const upper = path.basename(filePath).toUpperCase();
+      if (upper.includes("ARCH") && upper.includes("CONTEXT"))  return "ARCH_CONTEXT";
+      if (upper.includes("ARCH") && upper.includes("FURN"))     return "ARCH_FURNITURE";
+      if (upper.includes("ARCH"))  return "ARCH";
+      if (upper.includes("STR") || upper.includes("STRUCT"))    return "STR";
+      if (upper.includes("MEP"))   return "MEP";
+      if (upper.includes("HVAC") || upper.includes("VENT"))     return "HVAC";
+      if (upper.includes("ELEC") || upper.includes("EL_"))      return "ELEC";
+      if (upper.includes("FIRE"))  return "FIRE";
+      if (upper.includes("GEO") || upper.includes("SITE"))      return "GEO";
+      return "UNKNOWN";
+    };
+
+    const foundFiles: string[] = [];
+    const scanDir = (d: string) => {
+      if (!fs.existsSync(d)) return;
+      for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, entry.name);
+        if (entry.isDirectory()) scanDir(full);
+        else if (entry.name.toLowerCase().endsWith(".ifc")) foundFiles.push(full);
+      }
+    };
+    dirsToScan.forEach(scanDir);
+
+    const registeredPaths = new Set(registered.map((m) => m.path));
+    const unregistered = foundFiles
+      .filter((p) => !registeredPaths.has(p))
+      .map((p) => ({ name: path.basename(p, ".ifc"), discipline: inferDiscipline(p), path: p }));
+
+    // Auto-register unregistered files if requested
+    if (autoRegister && unregistered.length > 0) {
+      const updated = [...registered];
+      for (const u of unregistered) {
+        updated.push({ id: `model-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, ...u, registered_at: new Date().toISOString() });
+      }
+      writeModels(updated);
+      const lines = updated.map((m) => `- [${m.id}] **${m.name}** (${m.discipline})`).join("\n");
       return {
-        content: [
-          {
-            type: "text",
-            text: "No models registered yet. Use register_model to add IFC files to this project.",
-          },
-        ],
+        content: [{ type: "text", text: `Registered ${unregistered.length} new models. All models (${updated.length}):\n\n${lines}` }],
       };
     }
-    const table = models
-      .map((m) => `- [${m.id}] **${m.name}** (${m.discipline})\n  Path: ${m.path}`)
-      .join("\n");
+
+    // Build response showing registered + unregistered
+    const parts: string[] = [];
+    if (registered.length > 0) {
+      parts.push(`**Registered (${registered.length}):**\n` +
+        registered.map((m) => `- [${m.id}] **${m.name}** (${m.discipline})\n  Path: ${m.path}`).join("\n"));
+    }
+    if (unregistered.length > 0) {
+      parts.push(`**Found but not registered (${unregistered.length}):**\n` +
+        unregistered.map((u) => `- **${u.name}** → inferred discipline: \`${u.discipline}\`\n  Path: ${u.path}`).join("\n") +
+        "\n\nShall I register these? I can adjust any discipline codes first if needed.");
+    }
+    if (parts.length === 0) {
+      return {
+        content: [{ type: "text", text: `No IFC files found in ${DEFAULT_MODELS_DIR} and no models registered.` }],
+      };
+    }
     return {
-      content: [
-        {
-          type: "text",
-          text: `Registered models (${models.length}):\n\n${table}`,
-        },
-      ],
+      content: [{ type: "text", text: parts.join("\n\n") }],
     };
   }
 
