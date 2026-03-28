@@ -15,7 +15,6 @@ pub struct ClashInfo {
     pub description: String,
     pub position: [f64; 3],
     pub camera_eye: Option<[f64; 3]>,
-    pub units: String,
 }
 
 pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()> {
@@ -40,12 +39,6 @@ pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()
     project_writer.write_event(Event::Start(BytesStart::new("Name")))?;
     project_writer.write_event(Event::Text(BytesText::new("Clash Detection Project")))?;
     project_writer.write_event(Event::End(BytesEnd::new("Name")))?;
-
-    if let Some(clash) = clashes.first() {
-        project_writer.write_event(Event::Start(BytesStart::new("Unit")))?;
-        project_writer.write_event(Event::Text(BytesText::new(&clash.units)))?;
-        project_writer.write_event(Event::End(BytesEnd::new("Unit")))?;
-    }
 
     project_writer.write_event(Event::End(BytesEnd::new("Project")))?;
     project_writer.write_event(Event::End(BytesEnd::new("ProjectExtension")))?;

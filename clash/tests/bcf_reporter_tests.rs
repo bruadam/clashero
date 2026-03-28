@@ -16,7 +16,6 @@ fn test_generate_bcf_valid_zip() {
             description: "Clash description 1".to_string(),
             position: [1.0, 2.0, 3.0],
             camera_eye: Some([0.0, 0.0, 0.0]),
-            units: "meter".to_string(),
         },
         ClashInfo {
             guid_a: "GUID-C".to_string(),
@@ -24,7 +23,6 @@ fn test_generate_bcf_valid_zip() {
             description: "Clash description 2".to_string(),
             position: [10.0, 20.0, 30.0],
             camera_eye: None,
-            units: "meter".to_string(),
         },
     ];
 
@@ -51,7 +49,7 @@ fn test_generate_bcf_valid_zip() {
         let mut project_content = String::new();
         project_file.read_to_string(&mut project_content).unwrap();
         assert!(project_content.contains("<Name>Clash Detection Project</Name>"));
-        assert!(project_content.contains("<Unit>meter</Unit>"));
+        assert!(!project_content.contains("<Unit>"));
     }
 
     // Check for topic folders and their files
