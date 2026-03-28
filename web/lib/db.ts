@@ -421,6 +421,10 @@ export function setClashLinearIssueId(guid: string, linearIssueId: string): void
     .run(linearIssueId, guid);
 }
 
+export function clearClashes(): void {
+  getDb().prepare("DELETE FROM clashes").run();
+}
+
 export function updateClash(guid: string, patch: Partial<Clash>): void {
   const allowed = ["title", "description", "status", "priority", "assignee", "labels", "linearIssueId"] as const;
   const sets: string[] = [];
