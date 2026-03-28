@@ -33,6 +33,26 @@ fn test_load_ifc_metadata() -> Result<()> {
     assert_eq!(wall_metadata.ifc_type, "IFCWALL");
     assert_eq!(wall_metadata.discipline, "Structural");
     assert_eq!(wall_metadata.properties.get("LoadBearing").unwrap(), "T");
+    assert_eq!(wall_metadata.length_unit, "meter");
+
+    Ok(())
+}
+
+#[test]
+fn test_load_ifc_unit() -> Result<()> {
+    let mut file = NamedTempFile::new()?;
+    writeln!(file, "ISO-10303-21;")?;
+    writeln!(file, "HEADER;")?;
+    writeln!(file, "ENDSEC;")?;
+    writeln!(file, "DATA;")?;
+    writeln!(file, "#1=IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.);")?;
+    writeln!(file, "#2=IFCWALL('GUID_WALL',$,$,$,$,$,$,$);")?;
+    writeln!(file, "ENDSEC;")?;
+    writeln!(file, "END-ISO-10303-21;")?;
+
+    let metadata = load_ifc_metadata(file.path())?;
+    let wall_metadata = metadata.values().find(|m| m.ifc_type == "IFCWALL").unwrap();
+    assert_eq!(wall_metadata.length_unit, "millimetre");
 
     Ok(())
 }

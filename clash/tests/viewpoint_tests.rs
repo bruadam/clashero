@@ -15,6 +15,7 @@ fn test_viewpoint_calculation() {
         description: "Test clash".to_string(),
         position: [10.0, 10.0, 10.0],
         camera_eye: Some([0.0, 0.0, 0.0]),
+        units: "meter".to_string(),
     };
 
     generate_bcf(&bcf_path, &[clash]).expect("Failed to generate BCF");
@@ -66,6 +67,7 @@ fn test_viewpoint_calculation_default() {
         description: "Test clash".to_string(),
         position: [10.0, 10.0, 10.0],
         camera_eye: None,
+        units: "meter".to_string(),
     };
 
     generate_bcf(&bcf_path, &[clash]).expect("Failed to generate BCF");

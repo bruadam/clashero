@@ -92,10 +92,10 @@ fn test_cli_detect_with_bcf_output() {
 #[test]
 fn test_cli_detect_with_discipline_filtering() {
     let mut cmd = Command::cargo_bin("clash").unwrap();
-    let structural_ifc = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let architecture_ifc = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("models")
-        .join("Building-Structural.ifc");
+        .join("Building-Architecture.ifc");
     let hvac_ifc = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("models")
@@ -104,7 +104,7 @@ fn test_cli_detect_with_discipline_filtering() {
     // Without filtering
     cmd.arg("detect")
         .arg("--file")
-        .arg(&structural_ifc)
+        .arg(&architecture_ifc)
         .arg("--file")
         .arg(&hvac_ifc)
         .assert()
@@ -115,11 +115,11 @@ fn test_cli_detect_with_discipline_filtering() {
     let mut cmd = Command::cargo_bin("clash").unwrap();
     cmd.arg("detect")
         .arg("--file")
-        .arg(&structural_ifc)
+        .arg(&architecture_ifc)
         .arg("--file")
         .arg(&hvac_ifc)
         .arg("--discipline-a")
-        .arg("Structural")
+        .arg("Architectural")
         .arg("--discipline-b")
         .arg("MEP")
         .assert()

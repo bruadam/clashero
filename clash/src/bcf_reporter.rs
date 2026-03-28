@@ -15,6 +15,7 @@ pub struct ClashInfo {
     pub description: String,
     pub position: [f64; 3],
     pub camera_eye: Option<[f64; 3]>,
+    pub units: String,
 }
 
 pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()> {
@@ -26,7 +27,7 @@ pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()
 
     // 1. bcf.version
     zip.start_file("bcf.version", options)?;
-    zip.write_all(b"2.1")?;
+    zip.write_all(b"VersionId=\"2.1\"")?;
 
     // 2. project.bcfp
     zip.start_file("project.bcfp", options)?;
@@ -39,6 +40,13 @@ pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()
     project_writer.write_event(Event::Start(BytesStart::new("Name")))?;
     project_writer.write_event(Event::Text(BytesText::new("Clash Detection Project")))?;
     project_writer.write_event(Event::End(BytesEnd::new("Name")))?;
+
+    if let Some(clash) = clashes.first() {
+        project_writer.write_event(Event::Start(BytesStart::new("Unit")))?;
+        project_writer.write_event(Event::Text(BytesText::new(&clash.units)))?;
+        project_writer.write_event(Event::End(BytesEnd::new("Unit")))?;
+    }
+
     project_writer.write_event(Event::End(BytesEnd::new("Project")))?;
     project_writer.write_event(Event::End(BytesEnd::new("ProjectExtension")))?;
     zip.write_all(&project_writer.into_inner().into_inner())?;
@@ -131,7 +139,7 @@ pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()
             let dir = if len > 0.0 {
                 [d[0] / len, d[1] / len, d[2] / len]
             } else {
-                [-0.577, -0.577, -0.577]
+                [0.0, 0.0, -1.0]
             };
             (eye, dir)
         } else {
@@ -141,7 +149,7 @@ pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()
                     clash.position[1] + 5.0,
                     clash.position[2] + 5.0,
                 ],
-                [-0.577, -0.577, -0.577],
+                [-0.57735, -0.57735, -0.57735],
             )
         };
 
@@ -174,10 +182,10 @@ pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()
         bcfv_writer.write_event(Event::Text(BytesText::new("0")))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("X")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("Y")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new("0")))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new("1")))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("Y")))?;
         bcfv_writer.write_event(Event::Start(BytesStart::new("Z")))?;
-        bcfv_writer.write_event(Event::Text(BytesText::new("1")))?;
+        bcfv_writer.write_event(Event::Text(BytesText::new("0")))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("Z")))?;
         bcfv_writer.write_event(Event::End(BytesEnd::new("CameraUpVector")))?;
 
