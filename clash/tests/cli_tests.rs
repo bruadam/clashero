@@ -88,3 +88,41 @@ fn test_cli_detect_with_bcf_output() {
     assert!(archive.by_name("bcf.version").is_ok());
     assert!(archive.by_name("project.bcfp").is_ok());
 }
+
+#[test]
+fn test_cli_detect_with_discipline_filtering() {
+    let mut cmd = Command::cargo_bin("clash").unwrap();
+    let structural_ifc = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("models")
+        .join("Building-Structural.ifc");
+    let hvac_ifc = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("models")
+        .join("Building-Hvac.ifc");
+
+    // Without filtering
+    cmd.arg("detect")
+        .arg("--file")
+        .arg(&structural_ifc)
+        .arg("--file")
+        .arg(&hvac_ifc)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Total Clashes:"));
+
+    // With filtering
+    let mut cmd = Command::cargo_bin("clash").unwrap();
+    cmd.arg("detect")
+        .arg("--file")
+        .arg(&structural_ifc)
+        .arg("--file")
+        .arg(&hvac_ifc)
+        .arg("--discipline-a")
+        .arg("Structural")
+        .arg("--discipline-b")
+        .arg("MEP")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Total Clashes:"));
+}
