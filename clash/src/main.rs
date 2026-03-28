@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use clash::bcf_reporter::{ClashInfo, generate_bcf};
 use clash::clash_engine::CollisionEngine;
 use clash::ifc_adapter::{IfcElement, load_ifc_elements};
 use parry3d_f64::math::Isometry;
@@ -64,6 +65,7 @@ fn main() -> Result<()> {
             }
 
             let mut clash_count = 0;
+            let mut clash_infos = Vec::new();
             let identity = Isometry::identity();
 
             // Simple O(n^2) detection for now, as broad phase integration might be in Slice 4
@@ -91,6 +93,23 @@ fn main() -> Result<()> {
 
                     if is_clash {
                         clash_count += 1;
+                        clash_infos.push(ClashInfo {
+                            guid_a: el1.metadata.guid.clone(),
+                            guid_b: el2.metadata.guid.clone(),
+                            description: format!(
+                                "Clash between {} ({}) and {} ({})",
+                                el1.metadata.ifc_type,
+                                el1.metadata.guid,
+                                el2.metadata.ifc_type,
+                                el2.metadata.guid
+                            ),
+                            // Simple centroid approximation for viewpoint
+                            position: [
+                                (el1.mesh.vertices()[0].x + el2.mesh.vertices()[0].x) / 2.0,
+                                (el1.mesh.vertices()[0].y + el2.mesh.vertices()[0].y) / 2.0,
+                                (el1.mesh.vertices()[0].z + el2.mesh.vertices()[0].z) / 2.0,
+                            ],
+                        });
                     }
                 }
             }
@@ -102,8 +121,9 @@ fn main() -> Result<()> {
             println!("Execution Time: {:?}", duration);
 
             if let Some(out) = output {
-                println!("Output report requested: {:?}", out);
-                println!("(BCF generation not yet implemented in this slice)");
+                println!("Generating BCF report: {:?}", out);
+                generate_bcf(out, &clash_infos)?;
+                println!("BCF report generated successfully.");
             }
         }
     }
