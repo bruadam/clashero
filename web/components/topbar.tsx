@@ -15,21 +15,22 @@ interface TopbarProps {
 const TABS: { id: Tab; label: string }[] = [
   { id: "all", label: "All Issues" },
   { id: "active", label: "Active" },
-  { id: "by-rule", label: "By Rule" },
-  { id: "overview", label: "Overview" },
 ];
 
 export function Topbar({ activeTab, onTabChange }: TopbarProps) {
   const { theme, toggle } = useTheme();
 
   return (
-    <header className="flex h-11 items-center border-b border-border bg-background px-4 shrink-0">
+    <header className="flex h-11 items-center bg-background px-4 shrink-0 relative">
+      <div className="absolute bottom-0 left-3 right-3 h-px rounded-full bg-primary/15" />
       {/* Logo */}
       <div className="flex items-center gap-2 mr-6">
         <div className="w-5 h-5 rounded bg-primary flex items-center justify-center">
-          <span className="text-[9px] font-black text-primary-foreground leading-none">C</span>
+          <span className="text-[9px] font-black text-primary-foreground leading-none">
+            C
+          </span>
         </div>
-        <span className="text-sm font-semibold tracking-tight">CLASHERO</span>
+        <span className="text-sm font-semibold tracking-tight">ClasHero</span>
       </div>
 
       {/* Tabs */}
@@ -42,7 +43,7 @@ export function Topbar({ activeTab, onTabChange }: TopbarProps) {
               "flex items-center gap-1.5 px-3 h-8 rounded text-xs font-medium transition-colors",
               activeTab === tab.id
                 ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
             )}
           >
             {tab.id === "overview" && <Globe className="w-3 h-3" />}
@@ -60,16 +61,11 @@ export function Topbar({ activeTab, onTabChange }: TopbarProps) {
           onClick={toggle}
           title="Toggle theme (D)"
         >
-          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </Button>
-        <Button variant="ghost" size="icon" className="text-muted-foreground">
-          <Settings className="w-4 h-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="text-muted-foreground">
-          <LayoutList className="w-4 h-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="text-muted-foreground">
-          <Grid3X3 className="w-4 h-4" />
+          {theme === "dark" ? (
+            <Sun className="w-4 h-4" />
+          ) : (
+            <Moon className="w-4 h-4" />
+          )}
         </Button>
       </div>
     </header>

@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
 
-// Serve IFC files from REPO_ROOT/models/test-cde/
-const MODELS_DIR = path.resolve(process.cwd(), "..", "models", "test-cde");
+// Serve IFC files from REPO_ROOT/models/Building/
+const MODELS_DIR = path.resolve(process.cwd(), "..", "models", "Building");
 
 export async function GET(
   _req: NextRequest,
