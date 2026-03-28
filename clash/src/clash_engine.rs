@@ -280,4 +280,68 @@ mod tests {
         // Should find (0, 1000) or (1000, 0)
         assert!(results.contains(&(0, 1000)) || results.contains(&(1000, 0)));
     }
+
+    #[test]
+    fn test_bim_scale_precision_large_coordinates() {
+        // Many BIM projects use coordinates in the millions of millimeters (e.g. 1,000 km)
+        // We want to ensure that collision results at [1M, 1M, 1M] are identical to those at [0, 0, 0].
+        let offset = Vector::new(1_000_000.0, 1_000_000.0, 1_000_000.0);
+        let mesh1 = create_cube_mesh(1.0);
+        let mesh2 = create_cube_mesh(1.0);
+
+        // Scenario 1: Intersecting at [0,0,0] vs offset
+        let iso_a1 = Isometry::identity();
+        let iso_a2 = Isometry::translation(0.5, 0.0, 0.0);
+        let intersect_origin =
+            CollisionEngine::intersect(&mesh1, &iso_a1, &mesh2, &iso_a2).unwrap();
+
+        let iso_b1 = Isometry::translation(offset.x, offset.y, offset.z);
+        let iso_b2 = Isometry::translation(offset.x + 0.5, offset.y, offset.z);
+        let intersect_offset =
+            CollisionEngine::intersect(&mesh1, &iso_b1, &mesh2, &iso_b2).unwrap();
+
+        assert_eq!(
+            intersect_origin, intersect_offset,
+            "Intersection result differ at large coordinates"
+        );
+        assert!(intersect_offset, "Should intersect at large coordinates");
+
+        // Scenario 2: Distance at [0,0,0] vs offset
+        let iso_c1 = Isometry::identity();
+        let iso_c2 = Isometry::translation(2.0, 0.0, 0.0);
+        let dist_origin = CollisionEngine::distance(&mesh1, &iso_c1, &mesh2, &iso_c2).unwrap();
+
+        let iso_d1 = Isometry::translation(offset.x, offset.y, offset.z);
+        let iso_d2 = Isometry::translation(offset.x + 2.0, offset.y, offset.z);
+        let dist_offset = CollisionEngine::distance(&mesh1, &iso_d1, &mesh2, &iso_d2).unwrap();
+
+        assert!(
+            (dist_origin - dist_offset).abs() < f64::EPSILON * 1e10, // Allowing for tiny f64 precision jitter
+            "Distance results differ too much: origin={}, offset={}",
+            dist_origin,
+            dist_offset
+        );
+        assert_eq!(dist_offset, 1.0);
+
+        // Scenario 3: Small clearance violation at large coordinates
+        // Gap of 0.001 at 1M distance
+        let iso_e1 = Isometry::translation(offset.x, offset.y, offset.z);
+        let iso_e2 = Isometry::translation(offset.x + 1.001, offset.y, offset.z);
+        let dist_small_gap = CollisionEngine::distance(&mesh1, &iso_e1, &mesh2, &iso_e2).unwrap();
+        // At 1M offset, the relative error for f64 is roughly 1e-10.
+        // 0.0010000000474974513 - 0.001 = 4.7e-11, which is expected.
+        assert!(
+            (dist_small_gap - 0.001).abs() < 1e-10,
+            "Small gap distance failed at large coordinates: {}",
+            dist_small_gap
+        );
+
+        let threshold = 0.002;
+        let is_touching =
+            CollisionEngine::is_touching(&mesh1, &iso_e1, &mesh2, &iso_e2, threshold).unwrap();
+        assert!(
+            is_touching,
+            "Touching detection failed at large coordinates"
+        );
+    }
 }
