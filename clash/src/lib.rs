@@ -6,7 +6,7 @@ pub mod selector;
 use anyhow::Result;
 use bcf_reporter::ClashInfo;
 use clash_engine::CollisionEngine;
-use ifc_adapter::{load_ifc_elements, IfcElement};
+use ifc_adapter::{IfcElement, load_ifc_elements};
 use parry3d_f64::math::Isometry;
 use parry3d_f64::shape::Shape;
 use selector::Selector;
@@ -44,7 +44,7 @@ pub fn clash_detect_with_config(
             let elements = load_ifc_elements(&group.file)?;
             let selector = Selector::new(group.selector.as_deref().unwrap_or(""));
             let filtered = selector.filter(elements);
-            
+
             let mode = group.mode.as_deref().unwrap_or("i");
             if mode == "e" {
                 // If mode is exclude, we should ideally exclude these from the already collected group_a_elements
@@ -59,7 +59,8 @@ pub fn clash_detect_with_config(
                 // So if mode is "e", we can just negate the selector?
                 // Or if selector is "IfcWall" and mode is "e", it means "exclude IfcWall".
                 // So it's equivalent to selector "!IfcWall" and mode "i".
-                let selector_neg = Selector::new(&format!("!{}", group.selector.as_deref().unwrap_or("*")));
+                let selector_neg =
+                    Selector::new(&format!("!{}", group.selector.as_deref().unwrap_or("*")));
                 group_a_elements.extend(selector_neg.filter(load_ifc_elements(&group.file)?));
             } else {
                 group_a_elements.extend(filtered);
@@ -71,10 +72,11 @@ pub fn clash_detect_with_config(
             let elements = load_ifc_elements(&group.file)?;
             let selector = Selector::new(group.selector.as_deref().unwrap_or(""));
             let filtered = selector.filter(elements);
-            
+
             let mode = group.mode.as_deref().unwrap_or("i");
             if mode == "e" {
-                let selector_neg = Selector::new(&format!("!{}", group.selector.as_deref().unwrap_or("*")));
+                let selector_neg =
+                    Selector::new(&format!("!{}", group.selector.as_deref().unwrap_or("*")));
                 group_b_elements.extend(selector_neg.filter(load_ifc_elements(&group.file)?));
             } else {
                 group_b_elements.extend(filtered);

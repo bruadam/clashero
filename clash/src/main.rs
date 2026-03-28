@@ -75,7 +75,9 @@ fn main() -> Result<()> {
                 )?
                 .1
             } else {
-                return Err(anyhow::anyhow!("Either --file or --clashSet must be provided"));
+                return Err(anyhow::anyhow!(
+                    "Either --file or --clashSet must be provided"
+                ));
             };
 
             let clash_count = clash_infos.len();

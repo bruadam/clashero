@@ -19,10 +19,7 @@ impl Selector {
             return elements;
         }
 
-        elements
-            .into_iter()
-            .filter(|el| self.matches(el))
-            .collect()
+        elements.into_iter().filter(|el| self.matches(el)).collect()
     }
 
     /// Checks if a single element matches the query.
@@ -49,11 +46,7 @@ impl Selector {
             el_type_upper == query_upper
         };
 
-        if is_exclusion {
-            !matched
-        } else {
-            matched
-        }
+        if is_exclusion { !matched } else { matched }
     }
 }
 
