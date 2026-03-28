@@ -64,10 +64,31 @@ pub fn clash_detect(
             let intersection = aabb1.intersection(&aabb2).unwrap_or(aabb1);
             let center = intersection.center();
             let pos = [center.x, center.y, center.z];
-            println!("\nClash Position:");
-            println!("ID={}, ID={}", el1.metadata.guid, el2.metadata.guid);
-            println!("x={}, y={}, z={}", pos[0], pos[1], pos[2]);
-            println!("------------------------");
+
+            let unit_scale = match el1.metadata.length_unit.as_str() {
+                "millimetre" => 0.001,
+                "centimetre" => 0.01,
+                "decimetre" => 0.1,
+                "meter" => 1.0,
+                "inch" => 0.0254,
+                "foot" => 0.3048,
+                _ => 1.0,
+            };
+
+            let normalized_pos = [pos[0] * unit_scale, pos[1] * unit_scale, pos[2] * unit_scale];
+            let camera_eye = [
+                (pos[0] * unit_scale + 20.0 * unit_scale),
+                (pos[1] * unit_scale + 20.0 * unit_scale),
+                (pos[2] * unit_scale + 20.0 * unit_scale),
+            ];
+
+            // println!("\nClash Position (normalized to meters):");
+            // println!("ID={}, ID={}", el1.metadata.guid, el2.metadata.guid);
+            // println!(
+            //     "x={}, y={}, z={}",
+            //     normalized_pos[0], normalized_pos[1], normalized_pos[2]
+            // );
+            // println!("------------------------");
 
             clash_infos.push(ClashInfo {
                 guid_a: el1.metadata.guid.clone(),
@@ -79,9 +100,8 @@ pub fn clash_detect(
                     el2.metadata.ifc_type,
                     el2.metadata.guid
                 ),
-                position: pos,
-                camera_eye: Some([pos[0] + 2.0, pos[1] + 2.0, pos[2] + 2.0]),
-                units: el1.metadata.length_unit.clone(),
+                position: normalized_pos,
+                camera_eye: Some(camera_eye),
             });
         }
     }
