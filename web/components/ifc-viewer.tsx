@@ -107,6 +107,8 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
   const colorizeBy: ColorizeBy = colorizeByProp ?? colorizeByInternal;
   const [showColorPicker, setShowColorPicker] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+  // Midpoint overrides computed from actual element bounding boxes after models load
+  const [midpointOverrides, setMidpointOverrides] = useState<Map<string, [number, number, number]>>(new Map());
 
   useEffect(() => {
     if (!showColorPicker) return;
@@ -128,6 +130,9 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
   // Multi-element selection for BCF issue creation
   const [bcfSelection, setBcfSelection] = useState<BcfSelectedElement[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Keep a stable ref to clashes so the click callback can read the latest value
+  const clashesRef = useRef(clashes);
+  useEffect(() => { clashesRef.current = clashes; }, [clashes]);
   const refs = useRef<ViewerRefs>({
     components: null,
     world: null,
@@ -162,6 +167,10 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
   const [loadingProperties, setLoadingProperties] = useState(false);
 
   // ── Init ThatOpen world ─────────────────────────────────────────────────────
+  // Capture theme at mount time so init can set the correct initial background
+  const themeRef = useRef(theme);
+  useEffect(() => { themeRef.current = theme; }, [theme]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -185,9 +194,10 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
       world.camera = new OBCRuntime.SimpleCamera(components);
       world.scene.setup();
 
-      const bgColor = new THREE.Color(0x0d0d10);
+      const isDarkInit = themeRef.current === "dark";
+      const bgColor = new THREE.Color(isDarkInit ? 0x090910 : 0xffffff);
       world.scene.three.background = bgColor;
-      world.scene.three.fog = new THREE.FogExp2(bgColor.getHex(), 0.006);
+      world.scene.three.fog = new THREE.FogExp2(bgColor.getHex(), isDarkInit ? 0.006 : 0.003);
 
       const fillLight = new THREE.DirectionalLight(0x8080ff, 0.4);
       fillLight.position.set(-30, 20, -30);
@@ -258,6 +268,19 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
       clipper.enabled = false;
       refs.current.clipper = clipper;
 
+      // Wire clip edges so section planes render styled outlines
+      const clipStyler = components.get(OBCFRuntime.ClipStyler);
+      clipStyler.world = world;
+      clipper.onAfterCreate.add((plane) => {
+        // Find the ID for this plane in clipper.list and create styled edges
+        for (const [id, p] of clipper.list) {
+          if (p === plane) {
+            clipStyler.createFromClipping(id);
+            break;
+          }
+        }
+      });
+
       // ── Authoring tools ───────────────────────────────────────────────────
       const hider = components.get(OBCRuntime.Hider);
       refs.current.hider = hider;
@@ -273,6 +296,21 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
       await (highlighter as any).setup({ world });
       highlighter.zoomToSelection = false;
       refs.current.highlighter = highlighter as unknown as OBCF.Highlighter;
+
+      // Register custom highlight styles for clash element A (red) and B (blue)
+      const FRAGS_Init = await import("@thatopen/fragments");
+      highlighter.styles.set("clashA", {
+        color: COLOR_A,
+        renderedFaces: FRAGS_Init.RenderedFaces.TWO,
+        opacity: 1,
+        transparent: false,
+      });
+      highlighter.styles.set("clashB", {
+        color: COLOR_B,
+        renderedFaces: FRAGS_Init.RenderedFaces.TWO,
+        opacity: 1,
+        transparent: false,
+      });
 
       // Classify models as they load so Hider & Classifier work immediately
       fragments.core.onModelLoaded.add(async () => {
@@ -319,10 +357,12 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
   // ── Load models when list changes ──────────────────────────────────────────
   useEffect(() => {
     if (!models || models.length === 0) return;
-    const { ifcLoader, loadedFiles, world, fragments, bubblesGroup } = refs.current;
+    const { ifcLoader, loadedFiles, world, fragments } = refs.current;
     if (!ifcLoader || !world) return;
 
-    const toLoad = models.filter((m) => !loadedFiles.has(m.filename));
+    const toLoad = models.filter(
+      (m) => !loadedFiles.has(m.filename) && m.filename.startsWith("Building-")
+    );
     if (toLoad.length === 0) return;
 
     async function loadModels() {
@@ -351,8 +391,12 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
       setLoadingState("done");
       setCurrentFile(null);
 
-      if (bubblesGroup) placeBubbles(clashes, bubblesGroup, colorizeBy);
       if (world && fragments) fitCameraToModels(world, fragments);
+      if (fragments) {
+        refineMidpoints(fragments, clashes).then((overrides) => {
+          setMidpointOverrides(overrides);
+        });
+      }
     }
 
     loadModels();
@@ -362,7 +406,7 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
   // ── Fallback: load hardcoded models when no models prop ─────────────────────
   useEffect(() => {
     if (models && models.length > 0) return;
-    const { ifcLoader, world, fragments, bubblesGroup } = refs.current;
+    const { ifcLoader, world, fragments } = refs.current;
     if (!ifcLoader) return;
 
     const DEFAULT_FILES = [
@@ -395,8 +439,12 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
       setLoadingState("done");
       setCurrentFile(null);
 
-      if (bubblesGroup) placeBubbles(clashes, bubblesGroup, colorizeBy);
       if (world && fragments) fitCameraToModels(world, fragments);
+      if (fragments) {
+        refineMidpoints(fragments, clashes).then((overrides) => {
+          setMidpointOverrides(overrides);
+        });
+      }
     }
 
     // Delay slightly to allow init to complete
@@ -405,11 +453,11 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Re-colorize bubbles when colorizeBy or clashes change ─────────────────
+  // ── Re-colorize bubbles when colorizeBy, clashes, or midpoint overrides change ─
   useEffect(() => {
     const { bubblesGroup } = refs.current;
-    if (bubblesGroup) placeBubbles(clashes, bubblesGroup, colorizeBy);
-  }, [clashes, colorizeBy]);
+    if (bubblesGroup) placeBubbles(clashes, bubblesGroup, colorizeBy, midpointOverrides);
+  }, [clashes, colorizeBy, midpointOverrides]);
 
   // ── Theme ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -436,48 +484,188 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     const { highlightGroup, fragments, world } = refs.current;
     if (!highlightGroup) return;
 
+    // Cancel any in-flight highlight from a previous selection
+    let cancelled = false;
+
     highlightGroup.clear();
     setSelectedElement(null);
 
-    if (fragments?.initialized) {
-      for (const model of fragments.core.models.list.values()) {
-        resetModelAppearance(model.object);
+    async function applyHighlight() {
+      if (!highlightGroup) return;
+
+      const highlighter = refs.current.highlighter;
+
+      // Clear previous Highlighter selections for clash styles
+      if (highlighter) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const hl = highlighter as any;
+          if (hl.selection?.clashA) hl.selection.clashA = {};
+          if (hl.selection?.clashB) hl.selection.clashB = {};
+          await hl.updateColors?.();
+        } catch { /* ignore if not yet ready */ }
+      }
+
+      // Reset all models: clear per-element highlights and restore full opacity
+      if (fragments?.initialized) {
+        for (const model of fragments.core.models.list.values()) {
+          try {
+            await model.resetHighlight(undefined);
+            await model.resetOpacity(undefined);
+          } catch {
+            resetModelAppearance(model.object);
+          }
+        }
+      }
+
+      if (!selectedClash || cancelled) return;
+      if (cancelled) return;
+
+      if (fragments?.initialized) {
+        // Resolve each clash GUID to its correct model and local IDs.
+        // Use fileA/fileB to target the right model directly; fall back to scanning all models.
+        const clashMapA: OBC.ModelIdMap = {};
+        const clashMapB: OBC.ModelIdMap = {};
+        const modelsWithClash = new Set<string>();
+
+        const slots: Array<{ guid: string; file: string; map: OBC.ModelIdMap }> = [];
+        if (selectedClash.ifcGuidA) slots.push({ guid: selectedClash.ifcGuidA, file: selectedClash.fileA, map: clashMapA });
+        if (selectedClash.ifcGuidB) slots.push({ guid: selectedClash.ifcGuidB, file: selectedClash.fileB, map: clashMapB });
+
+        for (const { guid, file, map } of slots) {
+          if (cancelled) return;
+
+          // Helper: try resolving the GUID in a specific model
+          const tryModel = async (model: import("@thatopen/fragments").FragmentsModel): Promise<boolean> => {
+            try {
+              const localIds = await model.getLocalIdsByGuids([guid]);
+              const ids = localIds.filter((id): id is number => id != null);
+              if (ids.length > 0) {
+                map[model.modelId] = new Set(ids);
+                modelsWithClash.add(model.modelId);
+                return true;
+              }
+            } catch { /* GUID not in this model */ }
+            return false;
+          };
+
+          // Try the expected model first (fileA/fileB → modelId)
+          let found = false;
+          if (file) {
+            const targetModel = fragments!.core.models.list.get(file);
+            if (targetModel) found = await tryModel(targetModel);
+          }
+
+          // Fallback: scan all models if the expected model didn't have the GUID
+          if (!found) {
+            for (const model of fragments!.core.models.list.values()) {
+              if (cancelled) return;
+              if (await tryModel(model)) break;
+            }
+          }
+        }
+
+        if (cancelled) return;
+
+        // Ghost all models, then restore opacity for clashing elements
+        for (const model of fragments!.core.models.list.values()) {
+          if (cancelled) return;
+          try {
+            await model.setOpacity(undefined, 0.06);
+          } catch {
+            ghostModel(model.object, 0.06);
+          }
+        }
+
+        // Restore full opacity for clashing elements
+        for (const [modelId, idSet] of Object.entries(clashMapA)) {
+          const model = fragments!.core.models.list.get(modelId);
+          if (model) {
+            try { await model.setOpacity([...idSet], 1); } catch { /* skip */ }
+          }
+        }
+        for (const [modelId, idSet] of Object.entries(clashMapB)) {
+          const model = fragments!.core.models.list.get(modelId);
+          if (model) {
+            try { await model.setOpacity([...idSet], 1); } catch { /* skip */ }
+          }
+        }
+
+        if (cancelled) return;
+
+        // Apply highlight colors via the Highlighter component
+        if (highlighter) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const hl = highlighter as any;
+          try {
+            if (Object.keys(clashMapA).length > 0) {
+              await hl.highlightByID("clashA", clashMapA, true);
+            }
+            if (Object.keys(clashMapB).length > 0) {
+              await hl.highlightByID("clashB", clashMapB, true);
+            }
+          } catch {
+            // Fallback to model-level highlight if Highlighter fails
+            for (const [modelId, idSet] of Object.entries(clashMapA)) {
+              const model = fragments!.core.models.list.get(modelId);
+              if (model) {
+                try {
+                  const FRAGS = await import("@thatopen/fragments");
+                  await model.highlight([...idSet], {
+                    color: COLOR_A,
+                    renderedFaces: FRAGS.RenderedFaces.TWO,
+                    opacity: 1,
+                    transparent: false,
+                  });
+                } catch { tintModel(model.object, COLOR_A.clone(), 0.9); }
+              }
+            }
+            for (const [modelId, idSet] of Object.entries(clashMapB)) {
+              const model = fragments!.core.models.list.get(modelId);
+              if (model) {
+                try {
+                  const FRAGS = await import("@thatopen/fragments");
+                  await model.highlight([...idSet], {
+                    color: COLOR_B,
+                    renderedFaces: FRAGS.RenderedFaces.TWO,
+                    opacity: 1,
+                    transparent: false,
+                  });
+                } catch { tintModel(model.object, COLOR_B.clone(), 0.9); }
+              }
+            }
+          }
+        }
+      }
+
+      if (cancelled) return;
+
+      const [mx, my, mz] = selectedClash.midpoint;
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+      );
+      sphere.position.set(mx, my, mz);
+      highlightGroup.add(sphere);
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.8, 1.1, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.45 })
+      );
+      ring.position.set(mx, my, mz);
+      ring.lookAt(mx, my + 10, mz);
+      highlightGroup.add(ring);
+
+      if (world) {
+        const { cameraPosition: cp, target: tgt } = selectedClash.viewpoint;
+        world.camera.controls.setLookAt(cp[0], cp[1], cp[2], tgt[0], tgt[1], tgt[2], true);
       }
     }
 
-    if (!selectedClash) return;
-
-    if (fragments?.initialized) {
-      for (const model of fragments.core.models.list.values()) {
-        const name = model.modelId;
-        if (name === selectedClash.fileA) tintModel(model.object, COLOR_A, 0.9);
-        else if (name === selectedClash.fileB) tintModel(model.object, COLOR_B, 0.9);
-        else ghostModel(model.object, 0.06);
-      }
-    }
-
-    const [mx, my, mz] = selectedClash.midpoint;
-    const sphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.5, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
-    );
-    sphere.position.set(mx, my, mz);
-    highlightGroup.add(sphere);
-
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.8, 1.1, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.45 })
-    );
-    ring.position.set(mx, my, mz);
-    ring.lookAt(mx, my + 10, mz);
-    highlightGroup.add(ring);
-
-    if (world) {
-      const { cameraPosition: cp, target: tgt } = selectedClash.viewpoint;
-      world.camera.controls.setLookAt(cp[0], cp[1], cp[2], tgt[0], tgt[1], tgt[2], true);
-    }
+    applyHighlight();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClash]);
+  }, [selectedClash, loadingState]);
 
   // ── Click → select element + show properties popover ──────────────────────
   const handleCanvasClick = useCallback(
@@ -576,6 +764,20 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
             };
             setSelectedElement(info);
 
+            // Log BCF topics that reference this element
+            const matchingTopics = clashesRef.current.filter(
+              (c) => c.ifcGuidA === elem.globalId || c.ifcGuidB === elem.globalId
+            );
+            if (matchingTopics.length > 0) {
+              console.group(`[BCF] Topics referencing element ${elem.globalId} (${elem.ifcType}${elem.name ? " — " + elem.name : ""})`);
+              for (const topic of matchingTopics) {
+                console.log(`${topic.id} · ${topic.title}`, topic);
+              }
+              console.groupEnd();
+            } else {
+              console.log(`[BCF] No topics reference element ${elem.globalId} (${elem.ifcType}${elem.name ? " — " + elem.name : ""})`);
+            }
+
             // BCF selection (Shift = append, plain click = replace)
             const bcfEl: BcfSelectedElement = {
               globalId: elem.globalId,
@@ -664,12 +866,10 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     setWireframe((prev) => {
       const next = !prev;
       if (fragments?.initialized) {
-        for (const model of fragments.core.models.list.values()) {
-          model.object.traverse((child) => {
-            if (!(child instanceof THREE.Mesh)) return;
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach((m) => { (m as THREE.MeshLambertMaterial).wireframe = next; });
-          });
+        for (const mat of fragments.core.models.materials.list.values()) {
+          if (mat instanceof THREE.MeshLambertMaterial) {
+            mat.wireframe = next;
+          }
         }
       }
       return next;
@@ -1336,16 +1536,113 @@ function getBubbleColor(clash: Clash, colorizeBy: ColorizeBy): number {
   return 0x6b7280;
 }
 
-function placeBubbles(clashes: Clash[], group: THREE.Group, colorizeBy: ColorizeBy) {
+function placeBubbles(
+  clashes: Clash[],
+  group: THREE.Group,
+  colorizeBy: ColorizeBy,
+  overrides: Map<string, [number, number, number]> = new Map(),
+) {
   group.clear();
   const geo = new THREE.SphereGeometry(0.5, 14, 14);
   for (const clash of clashes) {
     const color = getBubbleColor(clash, colorizeBy);
     const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color }));
-    mesh.position.set(...clash.midpoint);
+    const pos = overrides.get(clash.guid) ?? clash.midpoint;
+    mesh.position.set(...pos);
     mesh.userData.clashGuid = clash.guid;
     group.add(mesh);
   }
+}
+
+/**
+ * Compute the bounding box of a single IFC element identified by its GlobalId
+ * within a given loaded Fragments model. Returns null if the element is not found
+ * or has no geometry.
+ */
+async function computeElementBbox(
+  model: import("@thatopen/fragments").FragmentsModel,
+  guid: string,
+): Promise<THREE.Box3 | null> {
+  const localIds = await model.getLocalIdsByGuids([guid]);
+  const localId = localIds[0];
+  if (localId == null) return null;
+
+  const meshDataArrays = await model.getItemsGeometry([localId]);
+  const box = new THREE.Box3();
+  let hasGeom = false;
+
+  for (const meshDataList of meshDataArrays) {
+    for (const md of meshDataList) {
+      if (!md.positions || md.positions.length === 0) continue;
+      const mat = md.transform;
+      for (let i = 0; i < md.positions.length; i += 3) {
+        const v = new THREE.Vector3(md.positions[i], md.positions[i + 1], md.positions[i + 2]);
+        v.applyMatrix4(mat);
+        box.expandByPoint(v);
+        hasGeom = true;
+      }
+    }
+  }
+
+  return hasGeom ? box : null;
+}
+
+/**
+ * For each clash that has ifcGuidA/ifcGuidB, compute the bounding boxes of
+ * both elements and find their intersection (overlap region). The bubble is
+ * placed at the center of that intersection — i.e. exactly where the two
+ * elements collide. Falls back to the union center when only one element is
+ * found or the boxes don't overlap.
+ */
+async function refineMidpoints(
+  fragments: OBC.FragmentsManager,
+  clashes: Clash[],
+): Promise<Map<string, [number, number, number]>> {
+  const overrides = new Map<string, [number, number, number]>();
+
+  for (const clash of clashes) {
+    if (!clash.ifcGuidA && !clash.ifcGuidB) continue;
+
+    // Collect per-element bounding boxes across all loaded models
+    let boxA: THREE.Box3 | null = null;
+    let boxB: THREE.Box3 | null = null;
+
+    for (const model of fragments.core.models.list.values()) {
+      for (const [guid, side] of [[clash.ifcGuidA, "A"], [clash.ifcGuidB, "B"]] as const) {
+        if (!guid) continue;
+        try {
+          const bbox = await computeElementBbox(model, guid);
+          if (!bbox) continue;
+          if (side === "A") {
+            boxA = boxA ? boxA.union(bbox) : bbox.clone();
+          } else {
+            boxB = boxB ? boxB.union(bbox) : bbox.clone();
+          }
+        } catch {
+          // element not in this model — continue
+        }
+      }
+    }
+
+    // If we have both boxes, try to intersect them
+    if (boxA && boxB) {
+      const intersection = boxA.clone().intersect(boxB);
+      if (!intersection.isEmpty()) {
+        const c = intersection.getCenter(new THREE.Vector3());
+        overrides.set(clash.guid, [c.x, c.y, c.z]);
+        continue;
+      }
+    }
+
+    // Fallback: center of whichever box(es) we found
+    const fallback = boxA ?? boxB;
+    if (fallback && !fallback.isEmpty()) {
+      const c = fallback.getCenter(new THREE.Vector3());
+      overrides.set(clash.guid, [c.x, c.y, c.z]);
+    }
+  }
+
+  return overrides;
 }
 
 function fixZFighting(obj: THREE.Object3D) {

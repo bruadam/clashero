@@ -3,7 +3,7 @@ import { getLinearSettings } from "@/lib/db";
 import { listProjects } from "@/lib/linear";
 
 export async function GET(req: NextRequest) {
-  const settings = getLinearSettings();
+  const settings = await getLinearSettings();
   if (!settings?.accessToken) {
     return NextResponse.json({ error: "Not connected to Linear" }, { status: 401 });
   }

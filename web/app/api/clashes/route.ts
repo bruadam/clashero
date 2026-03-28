@@ -1,35 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "fs/promises";
-import path from "path";
 import { parseBcf } from "@/lib/bcf-parser";
-import { DUMMY_CLASHES } from "@/lib/dummy-clashes";
-import { listClashes, clashCount, insertClash } from "@/lib/db";
+import { listClashes, clashCount, insertClash, deleteAllClashes } from "@/lib/db";
 import type { Clash } from "@/lib/types";
 
-const BCF_PATH = path.join(process.cwd(), "..", "web", "data", "report.bcf");
-const BCF_PATH_ALT = path.join(process.cwd(), "data", "report.bcf");
-
+/**
+ * GET /api/clashes
+ * Returns all clashes from the database.
+ */
 export async function GET() {
-  // If there are clashes in the DB, use those
-  if (clashCount() > 0) {
-    return NextResponse.json({ clashes: listClashes(), source: "db" });
+  try {
+    const clashes = await listClashes();
+    return NextResponse.json({ clashes, source: "db" });
+  } catch (err) {
+    console.error("[clashes] GET error:", err);
+    return NextResponse.json({ clashes: [], source: "error" });
   }
-
-  // Fall back to BCF file
-  for (const bcfPath of [BCF_PATH, BCF_PATH_ALT]) {
-    try {
-      const buf = await readFile(bcfPath);
-      const clashes = await parseBcf(buf.buffer as ArrayBuffer);
-      return NextResponse.json({ clashes, source: "bcf" });
-    } catch {
-      // file not found or parse error — try next path
-    }
-  }
-
-  // Fall back to dummy data
-  return NextResponse.json({ clashes: DUMMY_CLASHES, source: "dummy" });
 }
 
+/**
+ * POST /api/clashes
+ * Create a new clash. Body: Partial<Clash>.
+ */
 export async function POST(req: NextRequest) {
   const body = await req.json() as Partial<Clash>;
 
@@ -37,12 +28,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  // Auto-generate guid and id if not provided
   const now = new Date().toISOString();
   const guid = body.guid ?? crypto.randomUUID();
-
-  // Auto-increment CLH-NNN id
-  const count = clashCount();
+  const count = await clashCount();
   const id = body.id ?? `CLH-${String(count + 1).padStart(3, "0")}`;
 
   const clash: Clash = {
@@ -67,9 +55,19 @@ export async function POST(req: NextRequest) {
     assignee: body.assignee,
     labels: body.labels ?? [],
     createdAt: body.createdAt ?? now,
+    modifiedDate: body.modifiedDate,
+    creationAuthor: body.creationAuthor,
   };
 
-  insertClash(clash);
-
+  await insertClash(clash);
   return NextResponse.json(clash, { status: 201 });
+}
+
+/**
+ * DELETE /api/clashes
+ * Delete ALL clashes (reset). Use with caution.
+ */
+export async function DELETE() {
+  await deleteAllClashes();
+  return NextResponse.json({ ok: true });
 }

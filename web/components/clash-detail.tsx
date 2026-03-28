@@ -30,6 +30,14 @@ interface ClashDetailProps {
   onAssigneeChange?: (assignee: string) => void;
 }
 
+interface ElementInfo {
+  modelFilename: string;
+  ifcType: string;
+  name: string | null;
+  description: string | null;
+  properties: Record<string, string>;
+}
+
 const PRIORITIES: ClashPriority[] = ["urgent", "high", "medium", "low", "none"];
 const TEAM_MEMBERS = ["michael.wk", "sarah.j", "tom.b", "anna.k", "unassigned"];
 
@@ -105,6 +113,7 @@ export function ClashDetail({
   const [preview, setPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [elements, setElements] = useState<[ElementInfo | null, ElementInfo | null]>([null, null]);
   const [linearIssueId, setLinearIssueId] = useState(clash.linearIssueId);
   const [linearIssueUrl, setLinearIssueUrl] = useState<string | null>(null);
   const [linearIssueIdentifier, setLinearIssueIdentifier] = useState<string | null>(null);
@@ -168,6 +177,22 @@ export function ClashDetail({
   useEffect(() => {
     loadFeed();
   }, [loadFeed]);
+
+  // Resolve full element info for both clash components
+  useEffect(() => {
+    const guids = [clash.ifcGuidA, clash.ifcGuidB].filter(Boolean);
+    if (guids.length === 0) return;
+    const params = guids.map((g) => `guid=${encodeURIComponent(g)}`).join("&");
+    fetch(`/api/elements?${params}`)
+      .then((r) => r.json())
+      .then((data: Record<string, ElementInfo | null>) => {
+        setElements([
+          clash.ifcGuidA ? (data[clash.ifcGuidA] ?? null) : null,
+          clash.ifcGuidB ? (data[clash.ifcGuidB] ?? null) : null,
+        ]);
+      })
+      .catch(() => {/* leave as-is on error */});
+  }, [clash.guid, clash.ifcGuidA, clash.ifcGuidB]);
 
   const submitComment = async () => {
     const body = commentDraft.trim();
@@ -434,33 +459,55 @@ export function ClashDetail({
           </div>
         </div>
 
-        {/* Source + GUIDs */}
-        <div className="px-4 pb-3 space-y-1">
-          <CollapsibleSection title="Source Files" defaultOpen={true}>
-            <div className="mt-1.5 rounded-md border border-border overflow-hidden">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-border/50 bg-muted/10">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#ff3b30] shrink-0" />
-                <span className="font-mono text-[11px] text-foreground/70 truncate">{clash.fileA}</span>
-              </div>
-              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-muted/10">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#007aff] shrink-0" />
-                <span className="font-mono text-[11px] text-foreground/70 truncate">{clash.fileB}</span>
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="IFC GUIDs" defaultOpen={false} className="mt-1">
-            <div className="mt-1.5 rounded-md border border-border overflow-hidden">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-border/50 bg-muted/10">
-                <span className="text-[10px] font-semibold text-[#ff3b30] w-3 shrink-0">A</span>
-                <span className="font-mono text-[10px] text-muted-foreground truncate">{clash.ifcGuidA}</span>
-              </div>
-              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-muted/10">
-                <span className="text-[10px] font-semibold text-[#007aff] w-3 shrink-0">B</span>
-                <span className="font-mono text-[10px] text-muted-foreground truncate">{clash.ifcGuidB}</span>
-              </div>
-            </div>
-          </CollapsibleSection>
+        {/* Components */}
+        <div className="px-4 pb-3">
+          {([
+            { guid: clash.ifcGuidA, el: elements[0], accent: "#ff3b30", label: "A" },
+            { guid: clash.ifcGuidB, el: elements[1], accent: "#007aff", label: "B" },
+          ] as const).map(({ guid, el, accent, label }) => {
+            if (!guid) return null;
+            const title = el?.name ?? el?.ifcType ?? guid;
+            const props = el ? Object.entries(el.properties) : [];
+            return (
+              <CollapsibleSection
+                key={label}
+                title={el?.ifcType ?? `Component ${label}`}
+                defaultOpen={true}
+                className="mt-1"
+              >
+                <div className="mt-1.5 rounded-md border border-border overflow-hidden">
+                  {/* Header row: name + model */}
+                  <div className="flex items-start gap-2 px-2.5 py-2 bg-muted/10 border-b border-border/50">
+                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: accent }} />
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-[11px] font-medium text-foreground/80 truncate">{title}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground/60 truncate">
+                        {(el?.modelFilename ?? (label === "A" ? clash.fileA : clash.fileB)) || <span className="italic">unknown model</span>}
+                      </span>
+                      <span className="font-mono text-[10px] text-muted-foreground/40 break-all">{guid}</span>
+                    </div>
+                  </div>
+                  {/* Properties */}
+                  {props.length > 0 && (
+                    <div className="divide-y divide-border/40">
+                      {props.map(([k, v]) => (
+                        <div key={k} className="flex items-baseline gap-2 px-2.5 py-1.5 bg-muted/5">
+                          <span className="text-[10px] text-muted-foreground/60 shrink-0 w-28 truncate">{k}</span>
+                          <span className="text-[10px] text-foreground/70 break-all">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {props.length === 0 && el && (
+                    <p className="px-2.5 py-2 text-[10px] text-muted-foreground/40 italic">No properties.</p>
+                  )}
+                  {!el && (
+                    <p className="px-2.5 py-2 text-[10px] text-muted-foreground/40 italic">Not found in model registry.</p>
+                  )}
+                </div>
+              </CollapsibleSection>
+            );
+          })}
         </div>
 
         {/* Activity + Comments */}

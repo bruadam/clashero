@@ -22,7 +22,6 @@ export async function POST(req: NextRequest) {
   for (const file of files) {
     const filename = file.name;
 
-    // Sanitize
     if (
       !filename ||
       filename.includes("..") ||
@@ -39,7 +38,7 @@ export async function POST(req: NextRequest) {
       fs.writeFileSync(filePath, buffer);
 
       const displayName = filename.replace(/\.ifc$/i, "").replace(/[-_]/g, " ");
-      upsertIfcModel({
+      await upsertIfcModel({
         filename,
         displayName,
         uploadedAt: new Date().toISOString(),
