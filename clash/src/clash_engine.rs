@@ -1,6 +1,6 @@
 use parry3d_f64::bounding_volume::Aabb;
-use parry3d_f64::math::{Isometry, Vector};
-use parry3d_f64::partitioning::Qbvh;
+use parry3d_f64::math::{Pose, Vector};
+use parry3d_f64::partitioning::{Bvh, BvhBuildStrategy};
 use parry3d_f64::query::{contact, distance, intersection_test};
 use parry3d_f64::shape::{Shape, TriMesh};
 
@@ -11,9 +11,9 @@ impl CollisionEngine {
     /// Tests if two meshes intersect.
     pub fn intersect(
         mesh1: &TriMesh,
-        iso1: &Isometry<f64>,
+        iso1: &Pose,
         mesh2: &TriMesh,
-        iso2: &Isometry<f64>,
+        iso2: &Pose,
     ) -> anyhow::Result<bool> {
         Ok(intersection_test(iso1, mesh1, iso2, mesh2)?)
     }
@@ -21,9 +21,9 @@ impl CollisionEngine {
     /// Calculates the minimum distance between two meshes.
     pub fn distance(
         mesh1: &TriMesh,
-        iso1: &Isometry<f64>,
+        iso1: &Pose,
         mesh2: &TriMesh,
-        iso2: &Isometry<f64>,
+        iso2: &Pose,
     ) -> anyhow::Result<f64> {
         Ok(distance(iso1, mesh1, iso2, mesh2)?)
     }
@@ -32,9 +32,9 @@ impl CollisionEngine {
     /// If they don't overlap, returns 0.0.
     pub fn penetration_depth(
         mesh1: &TriMesh,
-        iso1: &Isometry<f64>,
+        iso1: &Pose,
         mesh2: &TriMesh,
-        iso2: &Isometry<f64>,
+        iso2: &Pose,
     ) -> anyhow::Result<f64> {
         // Broad phase check first
         if !Self::intersect(mesh1, iso1, mesh2, iso2)? {
@@ -55,7 +55,7 @@ impl CollisionEngine {
         let aabb1 = mesh1.compute_aabb(iso1);
         let aabb2 = mesh2.compute_aabb(iso2);
         if let Some(overlap) = aabb1.intersection(&aabb2) {
-            let extents: Vector<f64> = overlap.extents();
+            let extents: Vector = overlap.extents();
             return Ok(extents.x.min(extents.y).min(extents.z));
         }
 
@@ -65,9 +65,9 @@ impl CollisionEngine {
     /// Checks if two meshes are "touching" (distance < threshold, but not interpenetrating).
     pub fn is_touching(
         mesh1: &TriMesh,
-        iso1: &Isometry<f64>,
+        iso1: &Pose,
         mesh2: &TriMesh,
-        iso2: &Isometry<f64>,
+        iso2: &Pose,
         threshold: f64,
     ) -> anyhow::Result<bool> {
         let is_intersecting = Self::intersect(mesh1, iso1, mesh2, iso2)?;
@@ -81,27 +81,23 @@ impl CollisionEngine {
 
     /// Builds a Qbvh from a collection of AABBs.
     /// Each AABB is associated with a unique index.
-    pub fn build_broad_phase(aabbs: Vec<(u32, Aabb)>) -> Qbvh<u32> {
-        let mut bvh = Qbvh::new();
-        bvh.clear_and_rebuild(aabbs.into_iter(), 0.01);
-        bvh
+    pub fn build_broad_phase(aabbs: &[(u32, Aabb)]) -> Bvh {
+        Bvh::from_iter(
+            BvhBuildStrategy::Binned,
+            aabbs.iter().map(|(id, aabb)| (*id as usize, *aabb)),
+        )
     }
 
     /// Finds potential clashing pairs using broad-phase filtering.
     /// Returns a list of index pairs that might be clashing.
-    pub fn broad_phase_query(bvh: &Qbvh<u32>) -> Vec<(u32, u32)> {
+    pub fn broad_phase_query(bvh: &Bvh, aabbs: &[(u32, Aabb)]) -> Vec<(u32, u32)> {
         let mut potential_clashes = Vec::new();
-        let leaves: Vec<(u32, Aabb)> = bvh
-            .iter_data()
-            .map(|(node, data)| (*data, bvh.node_aabb(node).unwrap()))
-            .collect();
 
-        for (id1, aabb1) in leaves {
-            let mut intersected_ids = Vec::new();
-            bvh.intersect_aabb(&aabb1, &mut intersected_ids);
-            for id2 in intersected_ids {
-                if id1 < id2 {
-                    potential_clashes.push((id1, id2));
+        for (id1, aabb1) in aabbs {
+            for id2 in bvh.intersect_aabb(aabb1) {
+                let id2 = id2 as u32;
+                if *id1 < id2 {
+                    potential_clashes.push((*id1, id2));
                 }
             }
         }

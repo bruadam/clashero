@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use ifc_lite_core::decoder::EntityDecoder;
 use ifc_lite_core::{AttributeValue, EntityScanner};
 use ifc_lite_geometry::router::GeometryRouter;
+use parry3d_f64::math::Vector as Point;
 use parry3d_f64::shape::TriMesh;
 use std::collections::HashMap;
 use std::fs;
@@ -172,12 +173,10 @@ pub fn load_ifc_elements<P: AsRef<Path>>(path: P) -> Result<Vec<IfcElement>> {
                         continue;
                     }
 
-                    let vertices: Vec<parry3d_f64::math::Point<f64>> = mesh
+                    let vertices: Vec<Point> = mesh
                         .positions
                         .chunks(3)
-                        .map(|v| {
-                            parry3d_f64::math::Point::new(v[0] as f64, v[1] as f64, v[2] as f64)
-                        })
+                        .map(|v| Point::new(v[0] as f64, v[1] as f64, v[2] as f64))
                         .collect();
 
                     let indices: Vec<[u32; 3]> = mesh
@@ -189,7 +188,7 @@ pub fn load_ifc_elements<P: AsRef<Path>>(path: P) -> Result<Vec<IfcElement>> {
                     if !indices.is_empty() {
                         elements.push(IfcElement {
                             metadata: metadata.clone(),
-                            mesh: TriMesh::new(vertices, indices),
+                            mesh: TriMesh::new(vertices, indices)?,
                         });
                     }
                 }

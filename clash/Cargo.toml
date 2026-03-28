@@ -1,20 +1,22 @@
 [package]
 name = "clash"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
 ifc-lite-core = "2.1"
 ifc-lite-geometry = "2.1"
-parry3d-f64 = "0.13"
+parry3d-f64 = "0.26.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 anyhow = "1.0"
-tempfile = "3.3"
-clap = { version = "4.0", features = ["derive"] }
-quick-xml = "0.31"
-zip = "0.6"
-uuid = { version = "1.0", features = ["v4"] }
+tempfile = "3.27.0"
+clap = { version = "4.6", features = ["derive"] }
+quick-xml = "0.39"
+zip = "8.4.0"
+uuid = { version = "1.23", features = ["v4"] }
 chrono = "0.4"
 
 [dev-dependencies]
 assert_cmd = "2.0"
-predicates = "2.1"
+predicates = "3.1.4"

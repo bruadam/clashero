@@ -14,7 +14,17 @@ fn test_clash_detect_hvac_structural() {
     let discipline_a = None;
     let discipline_b = None;
 
-    let result = clash_detect(&files, tolerance, &discipline_a, &discipline_b);
+    let selector_a = None;
+    let selector_b = None;
+
+    let result = clash_detect(
+        &files,
+        tolerance,
+        &discipline_a,
+        &discipline_b,
+        &selector_a,
+        &selector_b,
+    );
 
     assert!(result.is_ok(), "clash_detect failed: {:?}", result.err());
     let (clash_count, clash_infos) = result.unwrap();

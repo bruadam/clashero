@@ -20,7 +20,7 @@ pub struct ClashInfo {
 pub fn generate_bcf<P: AsRef<Path>>(path: P, clashes: &[ClashInfo]) -> Result<()> {
     let file = File::create(path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default()
+    let options: FileOptions<'_, ()> = FileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
         .unix_permissions(0o755);
 

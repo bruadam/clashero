@@ -1,0 +1,17 @@
+[
+    {
+        "name": "HVAC vs Structural Walls",
+        "a": [
+            {
+                "file": "tests/models/Building-Hvac.ifc",
+                "selector": "*"
+            }
+        ],
+        "b": [
+            {
+                "file": "tests/models/Building-Structural.ifc",
+                "selector": "*"
+            }
+        ]
+    }
+]
