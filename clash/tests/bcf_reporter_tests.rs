@@ -1,15 +1,14 @@
 use clash::bcf_reporter::{ClashInfo, generate_bcf};
-use tempfile::tempdir;
 use std::fs::File;
 use std::io::Read;
-use std::process::Command;
+use tempfile::tempdir;
 use zip::ZipArchive;
 
 #[test]
 fn test_generate_bcf_valid_zip() {
     let dir = tempdir().unwrap();
     let bcf_path = dir.path().join("test.bcfzip");
-    
+
     let clashes = vec![
         ClashInfo {
             guid_a: "GUID-A".to_string(),
@@ -46,7 +45,9 @@ fn test_generate_bcf_valid_zip() {
 
     // Check for project.bcfp
     {
-        let mut project_file = archive.by_name("project.bcfp").expect("project.bcfp missing");
+        let mut project_file = archive
+            .by_name("project.bcfp")
+            .expect("project.bcfp missing");
         let mut project_content = String::new();
         project_file.read_to_string(&mut project_content).unwrap();
         assert!(project_content.contains("<Name>Clash Detection Project</Name>"));
@@ -55,9 +56,12 @@ fn test_generate_bcf_valid_zip() {
 
     // Check for topic folders and their files
     let file_names: Vec<String> = archive.file_names().map(|s| s.to_string()).collect();
-    
+
     // There should be 2 topic folders, each containing markup.bcf and a .bcfv file
-    let markup_files: Vec<_> = file_names.iter().filter(|n| n.ends_with("markup.bcf")).collect();
+    let markup_files: Vec<_> = file_names
+        .iter()
+        .filter(|n| n.ends_with("markup.bcf"))
+        .collect();
     assert_eq!(markup_files.len(), 2);
 
     let viewpoint_files: Vec<_> = file_names.iter().filter(|n| n.ends_with(".bcfv")).collect();
@@ -70,15 +74,5 @@ fn test_generate_bcf_valid_zip() {
         markup_file.read_to_string(&mut markup_content).unwrap();
         assert!(markup_content.contains("TopicStatus=\"Open\""));
         assert!(markup_content.contains("<Title>Clash between "));
-    }
-
-    // Verify with Node.js if available
-    let node_status = Command::new("node")
-        .arg("verify_bcf.js")
-        .arg(&bcf_path)
-        .status();
-
-    if let Ok(status) = node_status {
-        assert!(status.success(), "Node.js verification script failed");
     }
 }

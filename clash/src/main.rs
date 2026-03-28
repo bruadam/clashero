@@ -54,7 +54,8 @@ fn main() -> Result<()> {
             println!("Files: {:?}", file);
             println!("Tolerance: {}m", tolerance);
 
-            let (clash_count, clash_infos) = clash_detect(&file, tolerance, &discipline_a, &discipline_b)?;
+            let (clash_count, clash_infos) =
+                clash_detect(&file, tolerance, &discipline_a, &discipline_b)?;
 
             let duration = start_time.elapsed();
             println!("\nClash Detection Summary:");

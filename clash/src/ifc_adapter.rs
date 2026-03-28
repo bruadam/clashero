@@ -103,8 +103,10 @@ fn extract_basic_metadata(
                     pset_relationships.push((id as u64, object_ids, *prop_id as u64));
                 }
             } else if type_name == "IFCSIUNIT" {
-                if let (Some(AttributeValue::Enum(unit_type)), Some(AttributeValue::Enum(unit_name))) =
-                    (decoded.attributes.get(1), decoded.attributes.get(3))
+                if let (
+                    Some(AttributeValue::Enum(unit_type)),
+                    Some(AttributeValue::Enum(unit_name)),
+                ) = (decoded.attributes.get(1), decoded.attributes.get(3))
                 {
                     if unit_type == "LENGTHUNIT" {
                         length_unit = match decoded.attributes.get(2) {
@@ -151,7 +153,8 @@ pub fn load_ifc_elements<P: AsRef<Path>>(path: P) -> Result<Vec<IfcElement>> {
     let mut decoder = EntityDecoder::new(&content);
     let mut scanner = EntityScanner::new(&content);
     let router = GeometryRouter::new();
-    let (mut metadata_map, pset_relationships, _) = extract_basic_metadata(&mut decoder, &mut scanner);
+    let (mut metadata_map, pset_relationships, _) =
+        extract_basic_metadata(&mut decoder, &mut scanner);
     extract_properties(&mut decoder, pset_relationships, &mut metadata_map);
 
     // Geometry generation pass (Second full pass, but reused content/decoder)
@@ -204,7 +207,8 @@ pub fn load_ifc_metadata<P: AsRef<Path>>(path: P) -> Result<HashMap<u64, IfcMeta
 
     let mut decoder = EntityDecoder::new(&content);
     let mut scanner = EntityScanner::new(&content);
-    let (mut metadata_map, pset_relationships, _) = extract_basic_metadata(&mut decoder, &mut scanner);
+    let (mut metadata_map, pset_relationships, _) =
+        extract_basic_metadata(&mut decoder, &mut scanner);
     extract_properties(&mut decoder, pset_relationships, &mut metadata_map);
 
     Ok(metadata_map)
