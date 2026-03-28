@@ -75,7 +75,11 @@ pub fn clash_detect(
                 _ => 1.0,
             };
 
-            let normalized_pos = [pos[0] * unit_scale, pos[1] * unit_scale, pos[2] * unit_scale];
+            let normalized_pos = [
+                pos[0] * unit_scale,
+                pos[1] * unit_scale,
+                pos[2] * unit_scale,
+            ];
             let camera_eye = [
                 (pos[0] * unit_scale + 20.0 * unit_scale),
                 (pos[1] * unit_scale + 20.0 * unit_scale),
