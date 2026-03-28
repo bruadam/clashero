@@ -14,3 +14,11 @@
     "NEW INSTRUCTION": "WHEN creating sub-issues for a PRD THEN set the PRD as the parent/linked issue"
 }
 
+[2026-03-28 10:13] - Updated by Junie
+{
+    "TYPE": "positive",
+    "CATEGORY": "Issue hierarchy",
+    "EXPECTATION": "Sub-issues must be created under and explicitly linked to the PRD.",
+    "NEW INSTRUCTION": "WHEN creating sub-issues for a PRD THEN set the PRD as the parent/linked issue"
+}
+
