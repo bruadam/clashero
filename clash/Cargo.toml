@@ -4,3 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ifc-lite-core = "2.1"
+ifc-lite-geometry = "2.1"
+parry3d-f64 = "0.13"
+anyhow = "1.0"
+tempfile = "3.3"
