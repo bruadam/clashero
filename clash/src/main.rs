@@ -1,26 +1,111 @@
 use anyhow::Result;
-use clash::ifc_adapter::load_ifc_metadata;
-use std::env;
+use clap::{Parser, Subcommand};
+use clash::clash_engine::CollisionEngine;
+use clash::ifc_adapter::{IfcElement, load_ifc_elements};
+use parry3d_f64::math::Isometry;
+use std::path::PathBuf;
+use std::time::Instant;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Detect clashes between IFC files
+    Detect {
+        /// Path to the IFC files
+        #[arg(short, long, required = true)]
+        file: Vec<PathBuf>,
+
+        /// Tolerance for clash detection (meters)
+        #[arg(short, long, default_value_t = 0.0)]
+        tolerance: f64,
+
+        /// Output path for the BCF report
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Filter discipline A
+        #[arg(long)]
+        discipline_a: Option<String>,
+
+        /// Filter discipline B
+        #[arg(long)]
+        discipline_b: Option<String>,
+    },
+}
 
 fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("Usage: clash <ifc_file_path>");
-        return Ok(());
-    }
+    let cli = Cli::parse();
 
-    let path = &args[1];
-    println!("Loading IFC metadata from: {}", path);
+    match cli.command {
+        Commands::Detect {
+            file,
+            tolerance,
+            output,
+            discipline_a,
+            discipline_b,
+        } => {
+            let start_time = Instant::now();
+            println!("Starting clash detection...");
+            println!("Files: {:?}", file);
+            println!("Tolerance: {}m", tolerance);
 
-    let metadata = load_ifc_metadata(path)?;
-    println!("Successfully loaded {} entities.", metadata.len());
+            let mut all_elements: Vec<IfcElement> = Vec::new();
+            for path in &file {
+                println!("Loading elements from: {:?}", path);
+                let elements = load_ifc_elements(path)?;
+                println!("Loaded {} elements.", elements.len());
+                all_elements.extend(elements);
+            }
 
-    for (id, meta) in metadata.iter().take(10) {
-        println!("#{}: {} (GUID: {})", id, meta.ifc_type, meta.guid);
-    }
+            let mut clash_count = 0;
+            let identity = Isometry::identity();
 
-    if metadata.len() > 10 {
-        println!("... and {} more.", metadata.len() - 10);
+            // Simple O(n^2) detection for now, as broad phase integration might be in Slice 4
+            // or we can use CollisionEngine's broad phase if we have many elements.
+            for i in 0..all_elements.len() {
+                for j in (i + 1)..all_elements.len() {
+                    let el1 = &all_elements[i];
+                    let el2 = &all_elements[j];
+
+                    // Optional discipline filtering
+                    if let (Some(da), Some(db)) = (&discipline_a, &discipline_b) {
+                        let d1 = &el1.metadata.discipline;
+                        let d2 = &el2.metadata.discipline;
+                        if !((d1 == da && d2 == db) || (d1 == db && d2 == da)) {
+                            continue;
+                        }
+                    }
+
+                    let is_clash = if tolerance > 0.0 {
+                        CollisionEngine::distance(&el1.mesh, &identity, &el2.mesh, &identity)?
+                            < tolerance
+                    } else {
+                        CollisionEngine::intersect(&el1.mesh, &identity, &el2.mesh, &identity)?
+                    };
+
+                    if is_clash {
+                        clash_count += 1;
+                    }
+                }
+            }
+
+            let duration = start_time.elapsed();
+            println!("\nClash Detection Summary:");
+            println!("------------------------");
+            println!("Total Clashes: {}", clash_count);
+            println!("Execution Time: {:?}", duration);
+
+            if let Some(out) = output {
+                println!("Output report requested: {:?}", out);
+                println!("(BCF generation not yet implemented in this slice)");
+            }
+        }
     }
 
     Ok(())

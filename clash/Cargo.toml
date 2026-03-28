@@ -9,3 +9,8 @@ ifc-lite-geometry = "2.1"
 parry3d-f64 = "0.13"
 anyhow = "1.0"
 tempfile = "3.3"
+clap = { version = "4.0", features = ["derive"] }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "2.1"
