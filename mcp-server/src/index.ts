@@ -4,7 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { spawnSync } from "child_process";
+import { spawnSync, spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -291,6 +291,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           "Get a link to the interactive 3D clash viewer. Checks whether the dashboard " +
           "is running and returns a clickable URL. If the dashboard is not running, " +
           "instructs the user how to start it.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "start_dashboard",
+        description:
+          "Start the Next.js dashboard (web app) in the background so the 3D viewer and " +
+          "clash list are accessible at http://localhost:3000. " +
+          "Call this when the user wants to open the viewer or review results in the browser " +
+          "and get_model_viewer reports that the dashboard is not running.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -746,6 +758,68 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{
         type: "text",
         text: `The dashboard is not running.\n\nStart it with:\n\`\`\`\ncd web\nnpm run dev\n\`\`\`\n\nThen open **${DASHBOARD_URL}** in your browser.`,
+      }],
+    };
+  }
+
+  // --- start_dashboard ------------------------------------------------------
+  if (name === "start_dashboard") {
+    // Check if already running
+    try {
+      const resp = await fetch(DASHBOARD_URL, { signal: AbortSignal.timeout(2000) });
+      if (resp.ok || resp.status < 500) {
+        return {
+          content: [{
+            type: "text",
+            text: `Dashboard is already running at ${DASHBOARD_URL}`,
+          }],
+        };
+      }
+    } catch {
+      // Not running — proceed to start
+    }
+
+    const webDir = path.join(REPO_ROOT, "web");
+    if (!fs.existsSync(webDir)) {
+      return {
+        content: [{ type: "text", text: `web/ directory not found at: ${webDir}` }],
+        isError: true,
+      };
+    }
+
+    // Spawn npm run dev detached so it survives independently of this process
+    const child = spawn("npm", ["run", "dev"], {
+      cwd: webDir,
+      detached: true,
+      stdio: "ignore",
+      shell: true,
+    });
+    child.unref();
+
+    // Poll for up to 15 s
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const resp = await fetch(DASHBOARD_URL, { signal: AbortSignal.timeout(1000) });
+        if (resp.ok || resp.status < 500) {
+          return {
+            content: [{
+              type: "text",
+              text: `Dashboard started. Open it at:\n\n**${DASHBOARD_URL}**`,
+            }],
+          };
+        }
+      } catch {
+        // Still starting up
+      }
+    }
+
+    return {
+      content: [{
+        type: "text",
+        text: `Dashboard process launched but did not respond within 15 s. ` +
+          `It may still be starting — try opening ${DASHBOARD_URL} in a moment.`,
       }],
     };
   }
