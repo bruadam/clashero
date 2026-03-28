@@ -59,10 +59,26 @@ Restart Claude Desktop. You should see **clashero** listed under the connectors 
 
 ### Clash engine setup
 
+You can download the pre-built **Clash CLI** binary for your operating system from the [GitHub Releases](https://github.com/kongsgaard/clashero/releases) page.
+
+To ensure the `clash` command is available in your terminal (added to your PATH), move the downloaded binary to:
+- **macOS/Linux**: `/usr/local/bin/`
+- **Windows**: A folder included in your PATH, such as `C:\Windows\System32\` (requires admin) or a custom folder added to your Environment Variables.
+
+Alternatively, you can build it from source if you have Rust installed:
+
 ```bash
 cd clash
 cargo build --release
 ```
+
+After building, the binary will be located at `clash/target/release/clash`.
+
+### Agent Skills
+
+To enable agents to work with the clash detection engine, you can download the **clash-cli** skill. This skill provides the necessary instructions and context for agents to use the `clash` command effectively.
+
+You can find the skill in the `skills/clash-cli` directory.
 
 ### Usage
 
