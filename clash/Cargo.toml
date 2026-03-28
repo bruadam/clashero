@@ -9,3 +9,12 @@ ifc-lite-geometry = "2.1"
 parry3d-f64 = "0.13"
 anyhow = "1.0"
 tempfile = "3.3"
+clap = { version = "4.0", features = ["derive"] }
+quick-xml = "0.31"
+zip = "0.6"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = "0.4"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "2.1"

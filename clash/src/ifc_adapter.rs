@@ -14,6 +14,7 @@ pub struct IfcMetadata {
     pub ifc_type: String,
     pub discipline: String,
     pub properties: HashMap<String, String>,
+    pub length_unit: String,
 }
 
 /// Represents an extracted IFC element with its geometry and metadata.
@@ -79,9 +80,10 @@ fn extract_properties(
 fn extract_basic_metadata(
     decoder: &mut EntityDecoder,
     scanner: &mut EntityScanner,
-) -> (HashMap<u64, IfcMetadata>, Vec<(u64, Vec<u64>, u64)>) {
+) -> (HashMap<u64, IfcMetadata>, Vec<(u64, Vec<u64>, u64)>, String) {
     let mut metadata_map = HashMap::new();
     let mut pset_relationships = Vec::new();
+    let mut length_unit = "meter".to_string();
 
     while let Some((id, type_name, _start, _end)) = scanner.next_entity() {
         if let Ok(decoded) = decoder.decode_by_id(id as u32) {
@@ -100,6 +102,21 @@ fn extract_basic_metadata(
                         .collect();
                     pset_relationships.push((id as u64, object_ids, *prop_id as u64));
                 }
+            } else if type_name == "IFCSIUNIT" {
+                if let (
+                    Some(AttributeValue::Enum(unit_type)),
+                    Some(AttributeValue::Enum(unit_name)),
+                ) = (decoded.attributes.get(1), decoded.attributes.get(3))
+                {
+                    if unit_type == "LENGTHUNIT" {
+                        length_unit = match decoded.attributes.get(2) {
+                            Some(AttributeValue::Enum(prefix)) => {
+                                format!("{prefix}{unit_name}").to_lowercase()
+                            }
+                            _ => unit_name.to_lowercase(),
+                        };
+                    }
+                }
             } else if let Some(guid_attr) = decoded.attributes.first() {
                 let guid = match guid_attr {
                     AttributeValue::String(s) => s.clone(),
@@ -114,12 +131,18 @@ fn extract_basic_metadata(
                         ifc_type: type_name.to_string(),
                         discipline,
                         properties: HashMap::new(),
+                        length_unit: "".to_string(),
                     },
                 );
             }
         }
     }
-    (metadata_map, pset_relationships)
+
+    for meta in metadata_map.values_mut() {
+        meta.length_unit = length_unit.clone();
+    }
+
+    (metadata_map, pset_relationships, length_unit)
 }
 
 /// Loads an IFC file and extracts all geometry elements and their metadata.
@@ -130,8 +153,8 @@ pub fn load_ifc_elements<P: AsRef<Path>>(path: P) -> Result<Vec<IfcElement>> {
     let mut decoder = EntityDecoder::new(&content);
     let mut scanner = EntityScanner::new(&content);
     let router = GeometryRouter::new();
-
-    let (mut metadata_map, pset_relationships) = extract_basic_metadata(&mut decoder, &mut scanner);
+    let (mut metadata_map, pset_relationships, _) =
+        extract_basic_metadata(&mut decoder, &mut scanner);
     extract_properties(&mut decoder, pset_relationships, &mut metadata_map);
 
     // Geometry generation pass (Second full pass, but reused content/decoder)
@@ -184,7 +207,8 @@ pub fn load_ifc_metadata<P: AsRef<Path>>(path: P) -> Result<HashMap<u64, IfcMeta
 
     let mut decoder = EntityDecoder::new(&content);
     let mut scanner = EntityScanner::new(&content);
-    let (mut metadata_map, pset_relationships) = extract_basic_metadata(&mut decoder, &mut scanner);
+    let (mut metadata_map, pset_relationships, _) =
+        extract_basic_metadata(&mut decoder, &mut scanner);
     extract_properties(&mut decoder, pset_relationships, &mut metadata_map);
 
     Ok(metadata_map)
