@@ -32,7 +32,7 @@ export function IssueRow({ clash, selected, onClick, onStatusChange, onPriorityC
     <Link
       href={`/clash/${clash.guid}`}
       className={cn(
-        "group w-full flex items-center gap-2 px-4 py-1.5 text-xs transition-colors border-b border-border/40 cursor-pointer",
+        "group w-full min-w-0 flex items-center gap-2 px-4 py-1.5 text-xs transition-colors border-b border-border/40 cursor-pointer",
         selected
           ? "bg-accent text-foreground"
           : "hover:bg-accent/40 text-foreground/80 hover:text-foreground"
@@ -114,7 +114,7 @@ export function IssueRow({ clash, selected, onClick, onStatusChange, onPriorityC
       )}
 
       {/* Title */}
-      <span className="flex-1 truncate font-medium text-[13px]">{clash.title}</span>
+      <span className="flex-1 min-w-0 truncate font-medium text-[13px]">{clash.title}</span>
 
       {/* Assignee */}
       {show("assignee") && clash.assignee && (
