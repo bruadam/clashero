@@ -4,3 +4,4 @@
 .vs
 mcp-server/dist
 mcp-server/node_modules
+db/clashero.db-wal
