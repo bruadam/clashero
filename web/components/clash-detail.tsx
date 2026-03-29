@@ -93,6 +93,43 @@ function CollapsibleSection({
   );
 }
 
+function PropertySetGroup({
+  name,
+  properties,
+  defaultOpen = true,
+}: {
+  name: string;
+  properties: [string, string][];
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/10 text-left hover:bg-muted/20 transition-colors"
+      >
+        {open
+          ? <ChevronDown className="w-2.5 h-2.5 text-muted-foreground/50" />
+          : <ChevronRightSmall className="w-2.5 h-2.5 text-muted-foreground/50" />
+        }
+        <span className="text-[10px] font-medium text-muted-foreground/70">{name}</span>
+        <span className="text-[9px] text-muted-foreground/40 ml-auto">{properties.length}</span>
+      </button>
+      {open && (
+        <div className="divide-y divide-border/30">
+          {properties.map(([k, v]) => (
+            <div key={k} className="flex items-baseline gap-2 px-2.5 py-1.5 bg-muted/5">
+              <span className="text-[10px] text-muted-foreground/60 shrink-0 w-28 truncate" title={k}>{k}</span>
+              <span className="text-[10px] text-foreground/70 break-all">{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ClashDetail({
   clash,
   index,
@@ -467,7 +504,19 @@ export function ClashDetail({
           ] as const).map(({ guid, el, accent, label }) => {
             if (!guid) return null;
             const title = el?.name ?? el?.ifcType ?? guid;
-            const props = el ? Object.entries(el.properties) : [];
+
+            // Group properties by property set name
+            const propGroups: Record<string, [string, string][]> = {};
+            if (el) {
+              for (const [k, v] of Object.entries(el.properties)) {
+                const dotIdx = k.indexOf(".");
+                const group = dotIdx > 0 ? k.slice(0, dotIdx) : "General";
+                const propName = dotIdx > 0 ? k.slice(dotIdx + 1) : k;
+                (propGroups[group] ??= []).push([propName, v]);
+              }
+            }
+            const groupEntries = Object.entries(propGroups);
+
             return (
               <CollapsibleSection
                 key={label}
@@ -481,24 +530,24 @@ export function ClashDetail({
                     <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: accent }} />
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <span className="text-[11px] font-medium text-foreground/80 truncate">{title}</span>
+                      {el?.description && (
+                        <span className="text-[10px] text-muted-foreground/70 truncate">{el.description}</span>
+                      )}
                       <span className="font-mono text-[10px] text-muted-foreground/60 truncate">
                         {(el?.modelFilename ?? (label === "A" ? clash.fileA : clash.fileB)) || <span className="italic">unknown model</span>}
                       </span>
                       <span className="font-mono text-[10px] text-muted-foreground/40 break-all">{guid}</span>
                     </div>
                   </div>
-                  {/* Properties */}
-                  {props.length > 0 && (
+                  {/* Properties grouped by property set */}
+                  {groupEntries.length > 0 && (
                     <div className="divide-y divide-border/40">
-                      {props.map(([k, v]) => (
-                        <div key={k} className="flex items-baseline gap-2 px-2.5 py-1.5 bg-muted/5">
-                          <span className="text-[10px] text-muted-foreground/60 shrink-0 w-28 truncate">{k}</span>
-                          <span className="text-[10px] text-foreground/70 break-all">{v}</span>
-                        </div>
+                      {groupEntries.map(([group, props]) => (
+                        <PropertySetGroup key={group} name={group} properties={props} defaultOpen={groupEntries.length <= 3} />
                       ))}
                     </div>
                   )}
-                  {props.length === 0 && el && (
+                  {groupEntries.length === 0 && el && (
                     <p className="px-2.5 py-2 text-[10px] text-muted-foreground/40 italic">No properties.</p>
                   )}
                   {!el && (
