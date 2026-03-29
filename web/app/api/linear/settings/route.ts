@@ -3,7 +3,7 @@ import { getLinearSettings, saveLinearSettings } from "@/lib/db";
 import { getOrganization } from "@/lib/linear";
 
 export async function GET() {
-  const settings = getLinearSettings();
+  const settings = await getLinearSettings();
   if (!settings) {
     return NextResponse.json({ connected: false });
   }
@@ -24,12 +24,12 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   const body = await req.json() as { teamId?: string; projectId?: string };
-  const existing = getLinearSettings();
+  const existing = await getLinearSettings();
   if (!existing) {
     return NextResponse.json({ error: "Not connected to Linear" }, { status: 400 });
   }
 
-  saveLinearSettings({
+  await saveLinearSettings({
     ...existing,
     teamId: body.teamId ?? existing.teamId,
     projectId: body.projectId ?? existing.projectId,
@@ -39,10 +39,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE() {
-  // Clear token — effectively disconnects
-  const existing = getLinearSettings();
+  const existing = await getLinearSettings();
   if (existing) {
-    saveLinearSettings({ accessToken: "", workspaceId: "", teamId: "", projectId: "" });
+    await saveLinearSettings({ accessToken: "", workspaceId: "", teamId: "", projectId: "" });
   }
   return NextResponse.json({ ok: true });
 }

@@ -24,9 +24,8 @@ export async function GET(req: NextRequest) {
     const accessToken = await exchangeCodeForToken(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, code);
     const org = await getOrganization(accessToken);
 
-    // Preserve existing team/project selections if already configured
-    const existing = getLinearSettings();
-    saveLinearSettings({
+    const existing = await getLinearSettings();
+    await saveLinearSettings({
       accessToken,
       workspaceId: org.id,
       teamId: existing?.teamId ?? "",

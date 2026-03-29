@@ -224,7 +224,7 @@ function ModelRow({
           </span>
         )}
         {parseState === "error" && (
-          <AlertCircle className="w-3 h-3 text-red-400 shrink-0" title={parseError} />
+          <span title={parseError}><AlertCircle className="w-3 h-3 text-red-400 shrink-0" /></span>
         )}
 
         {/* Actions */}

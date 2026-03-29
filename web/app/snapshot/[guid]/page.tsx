@@ -13,15 +13,12 @@ import type * as OBC from "@thatopen/components";
 import type * as FRAGS from "@thatopen/fragments";
 import type { Clash } from "@/lib/types";
 
-const IFC_FILES = [
-  "BIM_3W_Team2_ARCH.ifc",
-  "BIM_3W_Team2_STR.ifc",
-  "BIM_3W_Team2_MEP.ifc",
-  "BIM_3W_Team2_FIRE.ifc",
-  "BIM_3W_Team2_GEO.ifc",
-  "BIM_3W_Team2_ARCH_Context.ifc",
-  "BIM_3W_Team2_ARCH_Furniture.ifc",
-];
+async function fetchModelFilenames(): Promise<string[]> {
+  const res = await fetch("/api/models");
+  if (!res.ok) return [];
+  const { models } = await res.json();
+  return models.map((m: { filename: string }) => m.filename);
+}
 
 const COLOR_A = new THREE.Color(0xff3b30);
 const COLOR_B = new THREE.Color(0x007aff);
@@ -111,7 +108,8 @@ export default function SnapshotPage() {
         wasm: { path: "/wasm/", absolute: true },
       });
 
-      for (const filename of IFC_FILES) {
+      const ifcFiles = await fetchModelFilenames();
+      for (const filename of ifcFiles) {
         if (disposed) return;
         try {
           const res = await fetch(`/api/models/${filename}`);

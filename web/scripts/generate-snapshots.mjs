@@ -95,13 +95,13 @@ async function main() {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--enable-webgl",
       "--ignore-gpu-blacklist",
-      "--use-gl=swiftshader",      // software WebGL — works without a GPU
+      "--use-gl=angle",
+      "--use-angle=swiftshader",   // software WebGL via ANGLE+SwiftShader
       "--disable-background-timer-throttling",
       "--disable-renderer-backgrounding",
     ],

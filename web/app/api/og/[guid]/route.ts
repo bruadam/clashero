@@ -23,7 +23,7 @@ export async function GET(
   }
 
   // Look up snapshot path from DB
-  const snapshotPath = getSnapshot(guid);
+  const snapshotPath = await getSnapshot(guid);
   if (snapshotPath) {
     const abs = path.join(PUBLIC_DIR, snapshotPath);
     try {

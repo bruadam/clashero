@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clashero-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clashero
+      POSTGRES_PASSWORD: clashero
+      POSTGRES_DB: clashero
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  pgdata:

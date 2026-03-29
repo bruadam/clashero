@@ -17,7 +17,6 @@ import {
 import type { DisplayOptions } from "@/components/display-options-panel";
 import { IssueRow } from "@/components/issue-row";
 import { SlidersHorizontal, Upload, Layers, Download } from "lucide-react";
-import { parseBcf } from "@/lib/bcf-parser";
 import { exportBcf, downloadBcf } from "@/lib/bcf-exporter";
 import { ModelManager } from "@/components/model-manager";
 import type { IfcModelEntry } from "@/components/model-manager";
@@ -169,6 +168,16 @@ export default function Home() {
   const detailStartWidthRef = useRef(320);
   const filterBtnRef = useRef<HTMLButtonElement>(null);
   const { theme, toggle: toggleTheme } = useTheme();
+
+  // Auto-load IFC models from disk on startup
+  useEffect(() => {
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((data: { models: IfcModelEntry[] }) => {
+        if (data.models?.length > 0) setIfcModels(data.models);
+      })
+      .catch(() => { /* silently ignore — viewer falls back to hardcoded defaults */ });
+  }, []);
 
   // Load clashes from BCF (falls back to dummy data when report.bcf is absent)
   useEffect(() => {
@@ -339,28 +348,19 @@ export default function Home() {
       if (!file) return;
       setIsImporting(true);
       try {
-        const buffer = await file.arrayBuffer();
-        const imported = await parseBcf(buffer);
-
-        // Fetch current guids fresh to avoid stale closure
-        const currentRes = await fetch("/api/clashes");
-        const currentData = await currentRes.json() as { clashes: Clash[] };
-        const existingGuids = new Set(currentData.clashes.map((c: Clash) => c.guid));
-        const newClashes = imported.filter((c) => !existingGuids.has(c.guid));
-
-        // POST each new clash to persist in DB — the API assigns sequential IDs
-        const saved: Clash[] = [];
-        for (const clash of newClashes) {
-          const res = await fetch("/api/clashes", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(clash),
-          });
-          if (res.ok) saved.push(await res.json() as Clash);
-        }
-
-        if (saved.length > 0) {
-          setClashes((prev) => [...prev, ...saved]);
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/bcf/import", {
+          method: "POST",
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json() as { imported: number; skipped: number; clashes: Clash[] };
+          if (data.clashes.length > 0) {
+            setClashes((prev) => [...prev, ...data.clashes]);
+          }
+        } else {
+          console.error("BCF import failed:", await res.text());
         }
       } catch (err) {
         console.error("BCF import failed:", err);

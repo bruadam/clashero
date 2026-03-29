@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSnapshot, setSnapshot, getAllSnapshots } from "@/lib/db";
+import { getAllSnapshots, setSnapshot } from "@/lib/db";
 
 /** GET /api/snapshots — list all stored snapshots */
 export async function GET() {
-  return NextResponse.json({ snapshots: getAllSnapshots() });
+  return NextResponse.json({ snapshots: await getAllSnapshots() });
 }
 
 /** POST /api/snapshots — persist a snapshot path for a clash */
@@ -12,6 +12,6 @@ export async function POST(req: NextRequest) {
   if (!body.guid || !body.path) {
     return NextResponse.json({ error: "guid and path required" }, { status: 400 });
   }
-  setSnapshot(body.guid, body.path);
+  await setSnapshot(body.guid, body.path);
   return NextResponse.json({ ok: true });
 }

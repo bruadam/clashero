@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
-import { replaceElementsForModel, markIfcModelParsed } from "@/lib/db";
+import { replaceElementsForModel, markIfcModelParsed, backfillClashFiles, getElementsForModel } from "@/lib/db";
 import type { IfcElement } from "@/lib/db";
 
 const MODELS_DIR = path.resolve(process.cwd(), "..", "models", "Building");
@@ -10,11 +10,10 @@ const MODELS_DIR = path.resolve(process.cwd(), "..", "models", "Building");
  * POST /api/models/[filename]/parse
  * Parses the IFC file server-side using web-ifc, extracts all elements
  * with their properties, and stores them in the DB.
- * Returns the list of extracted elements.
  */
 export async function POST(
   _req: NextRequest,
-  { params }: { params: Promise<{ filename: string }> }
+  { params }: { params: Promise<{ filename: string }> },
 ) {
   const { filename } = await params;
 
@@ -38,10 +37,8 @@ export async function POST(
     const data = fs.readFileSync(filePath);
     const modelId = ifcApi.OpenModel(new Uint8Array(data));
 
-    // Collect all entity types present in the file
     const allLines = ifcApi.GetAllLines(modelId);
     const elements: Omit<IfcElement, "id">[] = [];
-
     const processedIds = new Set<number>();
 
     for (let i = 0; i < allLines.size(); i++) {
@@ -58,9 +55,10 @@ export async function POST(
 
       if (!line || typeof line !== "object") continue;
 
-      const ifcType = (line.type as string) ?? "";
-      // Skip non-product entities (relations, property sets managed separately)
-      if (!ifcType || ifcType.startsWith("IFC_REL") || ifcType === "IFCPROPERTYSINGLEVALUE") continue;
+      const typeCode = line.type as number | undefined;
+      if (typeCode == null) continue;
+      const ifcType = ifcApi.GetNameFromTypeCode(typeCode) ?? "";
+      if (!ifcType || ifcType.startsWith("IFCREL") || ifcType === "IFCPROPERTYSINGLEVALUE") continue;
 
       const globalIdRef = line.GlobalId as { value?: string } | undefined;
       const globalId = globalIdRef?.value ?? "";
@@ -72,17 +70,14 @@ export async function POST(
       const descRef = line.Description as { value?: string } | null | undefined;
       const description = descRef?.value ?? null;
 
-      // Gather property sets
       const properties: Record<string, string> = {};
 
-      // Add basic attributes
       const typeRef = line.ObjectType as { value?: string } | null | undefined;
       if (typeRef?.value) properties["ObjectType"] = typeRef.value;
 
       const tagRef = line.Tag as { value?: string } | null | undefined;
       if (tagRef?.value) properties["Tag"] = tagRef.value;
 
-      // Try to get associated property sets
       try {
         const psets = await ifcApi.properties.getPropertySets(modelId, expressId, true);
         for (const pset of psets) {
@@ -100,7 +95,7 @@ export async function POST(
           }
         }
       } catch {
-        // property set lookup failed — continue with basic info
+        // property set lookup failed
       }
 
       elements.push({
@@ -116,23 +111,23 @@ export async function POST(
 
     ifcApi.CloseModel(modelId);
 
-    // Persist to DB
-    replaceElementsForModel(filename, elements);
-    markIfcModelParsed(filename, elements.length);
+    await replaceElementsForModel(filename, elements);
+    await markIfcModelParsed(filename, elements.length);
+    await backfillClashFiles();
 
     return NextResponse.json({
       filename,
       elementCount: elements.length,
       elements: elements.map((e) => ({
         ...e,
-        properties: JSON.parse(e.properties),
+        properties: JSON.parse(e.properties as string),
       })),
     });
   } catch (err) {
     console.error("[parse] Error:", err);
     return NextResponse.json(
       { error: "Parse failed", detail: String(err) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -143,7 +138,7 @@ export async function POST(
  */
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ filename: string }> }
+  { params }: { params: Promise<{ filename: string }> },
 ) {
   const { filename } = await params;
 
@@ -151,15 +146,14 @@ export async function GET(
     return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
   }
 
-  const { getElementsForModel } = await import("@/lib/db");
-  const elements = getElementsForModel(filename);
+  const elements = await getElementsForModel(filename);
 
   return NextResponse.json({
     filename,
     elementCount: elements.length,
     elements: elements.map((e) => ({
       ...e,
-      properties: JSON.parse(e.properties),
+      properties: typeof e.properties === "string" ? JSON.parse(e.properties) : e.properties,
     })),
   });
 }

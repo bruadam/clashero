@@ -3,7 +3,6 @@ import { getClash, getLinearSettings, updateClash } from "@/lib/db";
 import { getIssue } from "@/lib/linear";
 import type { ClashStatus } from "@/lib/types";
 
-/** Map Linear state name → Clash status (best-effort) */
 function mapLinearState(stateName: string): ClashStatus {
   const lower = stateName.toLowerCase();
   if (lower.includes("progress") || lower.includes("started")) return "in_progress";
@@ -15,10 +14,10 @@ function mapLinearState(stateName: string): ClashStatus {
 
 export async function POST(
   _req: NextRequest,
-  { params }: { params: Promise<{ guid: string }> }
+  { params }: { params: Promise<{ guid: string }> },
 ) {
   const { guid } = await params;
-  const clash = getClash(guid);
+  const clash = await getClash(guid);
   if (!clash) {
     return NextResponse.json({ error: "Clash not found" }, { status: 404 });
   }
@@ -26,7 +25,7 @@ export async function POST(
     return NextResponse.json({ error: "Clash is not linked to a Linear issue" }, { status: 400 });
   }
 
-  const settings = getLinearSettings();
+  const settings = await getLinearSettings();
   if (!settings?.accessToken) {
     return NextResponse.json({ error: "Not connected to Linear" }, { status: 400 });
   }
@@ -35,7 +34,7 @@ export async function POST(
     const issue = await getIssue(settings.accessToken, clash.linearIssueId);
     const newStatus = mapLinearState(issue.state.name);
 
-    updateClash(guid, {
+    await updateClash(guid, {
       status: newStatus,
       ...(issue.assignee ? { assignee: issue.assignee.name } : {}),
     });

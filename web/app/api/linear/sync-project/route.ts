@@ -3,7 +3,7 @@ import { listClashes, getLinearSettings, setClashLinearIssueId } from "@/lib/db"
 import { createIssue, addAttachment } from "@/lib/linear";
 
 export async function POST(req: NextRequest) {
-  const settings = getLinearSettings();
+  const settings = await getLinearSettings();
   if (!settings?.accessToken) {
     return NextResponse.json({ error: "Not connected to Linear" }, { status: 400 });
   }
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-  const clashes = listClashes();
+  const clashes = await listClashes();
   const unsynced = clashes.filter((c) => !c.linearIssueId);
 
   const results: Array<{ guid: string; id: string; linearIssueIdentifier: string; ok: boolean; error?: string }> = [];
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
         settings.projectId || undefined,
         clash.title,
         descLines.join("\n"),
-        clash.priority
+        clash.priority,
       );
 
       await addAttachment(
@@ -51,10 +51,10 @@ export async function POST(req: NextRequest) {
         issue.id,
         `Clashero — ${clash.id}`,
         viewerUrl,
-        `${clash.fileA} × ${clash.fileB}`
+        `${clash.fileA} × ${clash.fileB}`,
       );
 
-      setClashLinearIssueId(clash.guid, issue.id);
+      await setClashLinearIssueId(clash.guid, issue.id);
       results.push({ guid: clash.guid, id: clash.id, linearIssueIdentifier: issue.identifier, ok: true });
     } catch (err) {
       results.push({

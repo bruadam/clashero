@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ExternalLink, CheckCircle2, XCircle, Loader2, ArrowLeft, RefreshCw } from "lucide-react";
 
@@ -23,7 +23,7 @@ interface Project {
   name: string;
 }
 
-export default function LinearSettingsPage() {
+function LinearSettingsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -302,5 +302,13 @@ export default function LinearSettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LinearSettingsPage() {
+  return (
+    <Suspense>
+      <LinearSettingsContent />
+    </Suspense>
   );
 }
