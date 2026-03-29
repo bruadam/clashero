@@ -502,7 +502,14 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
     // Toggle bubble visibility: show only the selected clash's bubble, or all if none selected
     if (bubblesGroup) {
       for (const child of bubblesGroup.children) {
-        child.visible = !selectedClash || child.userData.clashGuid === selectedClash.guid;
+        const isSelected = selectedClash && child.userData.clashGuid === selectedClash.guid;
+        child.visible = !selectedClash || !!isSelected;
+        const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        if (mat) {
+          mat.transparent = !!isSelected;
+          mat.opacity = isSelected ? 0.35 : 1;
+          mat.needsUpdate = true;
+        }
       }
     }
 
