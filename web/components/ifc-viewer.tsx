@@ -488,7 +488,7 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
 
   // ── Selected clash → highlight ─────────────────────────────────────────────
   useEffect(() => {
-    const { highlightGroup, fragments, world } = refs.current;
+    const { highlightGroup, fragments, world, bubblesGroup } = refs.current;
     if (!highlightGroup) return;
     // Don't attempt highlights until models are fully loaded
     if (loadingState !== "done") return;
@@ -498,6 +498,13 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
 
     highlightGroup.clear();
     setSelectedElement(null);
+
+    // Toggle bubble visibility: show only the selected clash's bubble, or all if none selected
+    if (bubblesGroup) {
+      for (const child of bubblesGroup.children) {
+        child.visible = !selectedClash || child.userData.clashGuid === selectedClash.guid;
+      }
+    }
 
     async function applyHighlight() {
       if (!highlightGroup) return;
