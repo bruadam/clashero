@@ -79,6 +79,10 @@ function buildMarkupXml(clash: Clash, viewpointGuid: string): string {
     ? `    <Description>${esc(clash.description)}</Description>`
     : "";
 
+  const bimSnippetXml = (clash.ifcGuidA || clash.ifcGuidB)
+    ? `  <BIMSnippet>\n    <SnippetType>ClashGUIDs</SnippetType>\n    <Reference>${esc([clash.ifcGuidA, clash.ifcGuidB].filter(Boolean).join(","))}</Reference>\n  </BIMSnippet>`
+    : "";
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Markup xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="markup.xsd">
@@ -92,6 +96,7 @@ ${assigneeXml}
     <CreationAuthor>clashero</CreationAuthor>
     <ReferenceLink>${esc(clash.id)}</ReferenceLink>
   </Topic>
+${bimSnippetXml}
   <Viewpoints>
     <ViewPoint Guid="${esc(viewpointGuid)}">
       <Viewpoint>${esc(viewpointGuid)}.bcfv</Viewpoint>
@@ -118,16 +123,26 @@ ${[componentA, componentB].filter(Boolean).join("\n")}
   </Components>`
     : "";
 
+  const fov = vp.fieldOfView ?? 60;
+  const cameraXml = vp.cameraType === "orthogonal" && vp.orthogonalScale != null
+    ? `  <OrthogonalCamera>
+    ${vec3Xml("CameraViewPoint", vp.cameraPosition)}
+    ${vec3Xml("CameraDirection", vp.cameraDirection)}
+    ${vec3Xml("CameraUpVector", vp.cameraUpVector)}
+    <ViewToWorldScale>${vp.orthogonalScale}</ViewToWorldScale>
+  </OrthogonalCamera>`
+    : `  <PerspectiveCamera>
+    ${vec3Xml("CameraViewPoint", vp.cameraPosition)}
+    ${vec3Xml("CameraDirection", vp.cameraDirection)}
+    ${vec3Xml("CameraUpVector", vp.cameraUpVector)}
+    <FieldOfView>${fov}</FieldOfView>
+  </PerspectiveCamera>`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <VisualizationInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:noNamespaceSchemaLocation="visinfo.xsd"
                    Guid="${esc(clash.guid)}">
-  <PerspectiveCamera>
-    ${vec3Xml("CameraViewPoint", vp.cameraPosition)}
-    ${vec3Xml("CameraDirection", vp.cameraDirection)}
-    ${vec3Xml("CameraUpVector", vp.cameraUpVector)}
-    <FieldOfView>60</FieldOfView>
-  </PerspectiveCamera>
+${cameraXml}
 ${componentsXml}
 </VisualizationInfo>`;
 }

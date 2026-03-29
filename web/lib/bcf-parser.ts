@@ -110,30 +110,27 @@ const UNIT_TO_METRES: Record<BcfUnit, number> = {
   foot:       0.3048,
 };
 
-function parseProjectUnit(zip: JSZip): Promise<number> {
-  return new Promise(async (resolve) => {
-    const projectFile =
-      zip.file("project.bcfp") ??
-      zip.file("Project.bcfp") ??
-      zip.file("project.bcf");
+async function parseProjectUnit(zip: JSZip): Promise<number> {
+  const projectFile =
+    zip.file("project.bcfp") ??
+    zip.file("Project.bcfp") ??
+    zip.file("project.bcf");
 
-    if (!projectFile) { resolve(1); return; }
+  if (!projectFile) return 1;
 
-    try {
-      const xml = await projectFile.async("text");
-      const parsed = xmlParser.parse(xml) as {
-        ProjectExtension?: { Project?: { Unit?: string } };
-      };
-      const raw = parsed?.ProjectExtension?.Project?.Unit?.toLowerCase().trim() as BcfUnit | undefined;
-      if (raw && raw in UNIT_TO_METRES) {
-        resolve(UNIT_TO_METRES[raw]);
-      } else {
-        resolve(1);
-      }
-    } catch {
-      resolve(1);
+  try {
+    const xml = await projectFile.async("text");
+    const parsed = xmlParser.parse(xml) as {
+      ProjectExtension?: { Project?: { Unit?: string } };
+    };
+    const raw = parsed?.ProjectExtension?.Project?.Unit?.toLowerCase().trim() as BcfUnit | undefined;
+    if (raw && raw in UNIT_TO_METRES) {
+      return UNIT_TO_METRES[raw];
     }
-  });
+    return 1;
+  } catch {
+    return 1;
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,18 +181,6 @@ function extractGuidsFromVp(vi: BcfVisualizationInfo): string[] {
 }
 
 /**
- * Extract IfcGuids from a BIMSnippet Reference like
- * "23uPJWDfXEcwHH3kdFgV9c,3dkFAzOGrAIuOzY_RdrdVv".
- */
-function extractGuidsFromBimSnippet(ref?: string): string[] {
-  if (!ref) return [];
-  return ref
-    .split(/[,;\s]+/)
-    .map((g) => g.trim())
-    .filter((g) => g.length > 0);
-}
-
-/**
  * Derive a ruleId from two originating-system / filename strings.
  * e.g. "B250_VENT.ifc" + "B250_VVS.ifc" → "VENT×VVS"
  */
@@ -209,6 +194,33 @@ function deriveRuleId(fileA: string, fileB: string): string {
   if (!a && !b) return "UNKNOWN";
   if (!b)       return a;
   if (!a)       return b;
+  return `${a}×${b}`;
+}
+
+/**
+ * Extract IFC type names from a clash description like:
+ * "Clash between IFCAIRTERMINAL (guid) and IFCCHIMNEY (guid)"
+ * Returns [typeA, typeB] or empty strings if not found.
+ */
+function extractIfcTypesFromDescription(desc: string): [string, string] {
+  // Match IFC type names (IFC followed by uppercase letters/digits)
+  const matches = desc.match(/\bIFC[A-Z][A-Z0-9]*\b/g);
+  if (!matches || matches.length === 0) return ["", ""];
+  return [matches[0] ?? "", matches[1] ?? ""];
+}
+
+/**
+ * Derive a ruleId from two IFC type names.
+ * e.g. "IFCAIRTERMINAL" + "IFCCHIMNEY" → "AIRTERMINAL×CHIMNEY"
+ */
+function deriveRuleIdFromTypes(typeA: string, typeB: string): string {
+  const strip = (t: string) => t.replace(/^IFC/i, "").toUpperCase();
+  const a = strip(typeA);
+  const b = strip(typeB);
+  if (!a && !b) return "";
+  if (!b)       return a;
+  if (!a)       return b;
+  if (a === b)  return a;
   return `${a}×${b}`;
 }
 
@@ -278,8 +290,7 @@ export async function parseBcf(data: ArrayBuffer | Uint8Array): Promise<Clash[]>
       }
     }
 
-    // IFC GUIDs from BIMSnippet (most reliable in Clashero-generated BCF)
-    const snippetGuids = extractGuidsFromBimSnippet(markup?.BIMSnippet?.Reference);
+    // IFC GUIDs from BIMSnippet (unused — we always prefer viewpoint component selection)
 
     // ── Resolve .bcfv filenames ──────────────────────────────────────────────
     // Prefer the Viewpoints list from markup; fall back to folder scan.
@@ -324,16 +335,17 @@ export async function parseBcf(data: ArrayBuffer | Uint8Array): Promise<Clash[]>
         const dir = toVec3(cam.CameraDirection);           // direction is unit-less
         const up  = toVec3(cam.CameraUpVector);
 
-        // Target: 1 metre along the camera direction from the camera position
-        const target: [number, number, number] = [
-          pos[0] + dir[0],
-          pos[1] + dir[1],
-          pos[2] + dir[2],
-        ];
+        // Normalise direction (BCF spec says it should already be unit length, but guard against it)
+        const dirLen = Math.sqrt(dir[0] ** 2 + dir[1] ** 2 + dir[2] ** 2) || 1;
+        const dirN: [number, number, number] = [dir[0] / dirLen, dir[1] / dirLen, dir[2] / dirLen];
+
+        // Target is stored as [0,0,0] here — the real midpoint is computed later
+        // by refineMidpoints() using actual element bounding boxes after model load.
+        const target: [number, number, number] = [0, 0, 0];
 
         viewpoint = {
           cameraPosition: pos,
-          cameraDirection: dir,
+          cameraDirection: dirN,
           cameraUpVector:  up,
           target,
           cameraType:     isPerspective ? "perspective" : "orthogonal",
@@ -362,20 +374,24 @@ export async function parseBcf(data: ArrayBuffer | Uint8Array): Promise<Clash[]>
       break; // use first valid viewpoint
     }
 
-    // Merge GUIDs: prefer BIMSnippet (explicit clash pair), fall back to viewpoint selection
-    const allGuids = snippetGuids.length >= 2
-      ? snippetGuids
-      : [...new Set([...snippetGuids, ...vpGuids])];
+    // Use viewpoint component selection GUIDs only
+    const ifcGuidA = vpGuids[0] ?? "";
+    const ifcGuidB = vpGuids[1] ?? "";
 
-    const ifcGuidA = allGuids[0] ?? "";
-    const ifcGuidB = allGuids[1] ?? "";
+    // Midpoint defaults to origin — refined later by refineMidpoints() from element bounding boxes
+    const midpoint: [number, number, number] = [0, 0, 0];
 
-    // Midpoint = camera target (best approximation without mesh geometry)
-    const midpoint: [number, number, number] = [...viewpoint.target];
-
-    const ruleId = fileA && fileB
-      ? deriveRuleId(fileA, fileB)
-      : topic["@_TopicType"] ?? "UNKNOWN";
+    let ruleId = "";
+    if (fileA && fileB) {
+      ruleId = deriveRuleId(fileA, fileB);
+    } else {
+      // Try to extract IFC types from the description (e.g. "Clash between IFCAIRTERMINAL ... and IFCCHIMNEY ...")
+      const [typeA, typeB] = extractIfcTypesFromDescription(description);
+      if (typeA || typeB) {
+        ruleId = deriveRuleIdFromTypes(typeA, typeB);
+      }
+    }
+    if (!ruleId) ruleId = topic["@_TopicType"] ?? "UNKNOWN";
 
     const id = `CLH-${String(index).padStart(3, "0")}`;
 
