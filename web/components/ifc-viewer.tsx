@@ -518,7 +518,8 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
 
       const highlighter = refs.current.highlighter;
 
-      // Clear previous Highlighter selections for clash styles
+      // Clear previous Highlighter selections for clash styles and let
+      // the Highlighter reset per-model highlights via updateColors.
       if (highlighter) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -528,18 +529,6 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
           if (hl.selection?.ghost) hl.selection.ghost = {};
           await hl.updateColors?.();
         } catch { /* ignore if not yet ready */ }
-      }
-
-      // Reset all models: clear per-element highlights and restore full opacity
-      if (fragments?.initialized) {
-        for (const model of fragments.core.models.list.values()) {
-          try {
-            await model.resetHighlight(undefined);
-            await model.resetOpacity(undefined);
-          } catch {
-            resetModelAppearance(model.object);
-          }
-        }
       }
 
       if (!selectedClash || cancelled) return;
@@ -632,17 +621,14 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         const hl = highlighter as any;
         if (hl) {
           try {
-            // Ghost non-clashing elements
-            if (Object.keys(ghostMap).length > 0) {
-              await hl.highlightByID("ghost", ghostMap, true);
+            // Set selections directly and call updateColors once to avoid
+            // repeated reset/reapply cycles and race conditions.
+            if (hl.selection) {
+              hl.selection.ghost = Object.keys(ghostMap).length > 0 ? ghostMap : {};
+              hl.selection.clashA = Object.keys(clashMapA).length > 0 ? clashMapA : {};
+              hl.selection.clashB = Object.keys(clashMapB).length > 0 ? clashMapB : {};
             }
-            // Highlight clash elements
-            if (Object.keys(clashMapA).length > 0) {
-              await hl.highlightByID("clashA", clashMapA, true);
-            }
-            if (Object.keys(clashMapB).length > 0) {
-              await hl.highlightByID("clashB", clashMapB, true);
-            }
+            await hl.updateColors?.();
           } catch {
             // Fallback to model-level highlight if Highlighter fails
             for (const [modelId, idSet] of Object.entries(clashMapA)) {
@@ -1751,13 +1737,6 @@ function tintModel(obj: THREE.Object3D, color: THREE.Color, opacity: number) {
   });
 }
 
-function resetModelAppearance(obj: THREE.Object3D) {
-  obj.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    const mats = Array.isArray(child.material) ? child.material : [child.material];
-    mats.forEach((m) => { m.transparent = false; m.opacity = 1; m.needsUpdate = true; });
-  });
-}
 
 function fitCameraToModels(world: OBCWorld, fragments: OBC.FragmentsManager) {
   const box = new THREE.Box3();
