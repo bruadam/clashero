@@ -65,8 +65,12 @@ function rowToClash(row: Record<string, unknown>): Clash {
     viewpoint: row.viewpoint as Clash["viewpoint"],
     assignee: (row.assignee as string | null) ?? undefined,
     labels: row.labels as string[],
-    createdAt: (row.created_at as Date)?.toISOString?.() ?? (row.created_at as string),
-    modifiedDate: row.modified_at ? (row.modified_at as Date)?.toISOString?.() ?? (row.modified_at as string) : undefined,
+    createdAt:
+      (row.created_at as Date)?.toISOString?.() ?? (row.created_at as string),
+    modifiedDate: row.modified_at
+      ? ((row.modified_at as Date)?.toISOString?.() ??
+        (row.modified_at as string))
+      : undefined,
     creationAuthor: (row.creation_author as string | null) ?? undefined,
     linearIssueId: (row.linear_issue_id as string | null) ?? undefined,
   };
@@ -75,12 +79,16 @@ function rowToClash(row: Record<string, unknown>): Clash {
 // ── Clashes ──────────────────────────────────────────────────────────────────
 
 export async function listClashes(): Promise<Clash[]> {
-  const { rows } = await pool.query("SELECT * FROM clashes ORDER BY created_at DESC");
+  const { rows } = await pool.query(
+    "SELECT * FROM clashes ORDER BY created_at DESC",
+  );
   return rows.map(rowToClash);
 }
 
 export async function getClash(guid: string): Promise<Clash | null> {
-  const { rows } = await pool.query("SELECT * FROM clashes WHERE guid = $1", [guid]);
+  const { rows } = await pool.query("SELECT * FROM clashes WHERE guid = $1", [
+    guid,
+  ]);
   return rows.length > 0 ? rowToClash(rows[0]) : null;
 }
 
@@ -101,13 +109,25 @@ export async function insertClash(clash: Clash): Promise<void> {
         $14, $15, $16, $17, $18, $19)
      ON CONFLICT (guid) DO NOTHING`,
     [
-      clash.guid, clash.id, clash.title, clash.description,
-      clash.status, clash.priority, clash.ruleId,
-      clash.ifcGuidA, clash.ifcGuidB, clash.fileA, clash.fileB,
-      JSON.stringify(clash.midpoint), JSON.stringify(clash.viewpoint),
-      clash.assignee ?? null, JSON.stringify(clash.labels),
-      clash.createdAt, clash.modifiedDate ?? null,
-      clash.creationAuthor ?? null, clash.linearIssueId ?? null,
+      clash.guid,
+      clash.id,
+      clash.title,
+      clash.description,
+      clash.status,
+      clash.priority,
+      clash.ruleId,
+      clash.ifcGuidA,
+      clash.ifcGuidB,
+      clash.fileA,
+      clash.fileB,
+      JSON.stringify(clash.midpoint),
+      JSON.stringify(clash.viewpoint),
+      clash.assignee ?? null,
+      JSON.stringify(clash.labels),
+      clash.createdAt,
+      clash.modifiedDate ?? null,
+      clash.creationAuthor ?? null,
+      clash.linearIssueId ?? null,
     ],
   );
 }
@@ -140,18 +160,33 @@ export async function upsertClash(clash: Clash): Promise<void> {
        creation_author = EXCLUDED.creation_author,
        linear_issue_id = EXCLUDED.linear_issue_id`,
     [
-      clash.guid, clash.id, clash.title, clash.description,
-      clash.status, clash.priority, clash.ruleId,
-      clash.ifcGuidA, clash.ifcGuidB, clash.fileA, clash.fileB,
-      JSON.stringify(clash.midpoint), JSON.stringify(clash.viewpoint),
-      clash.assignee ?? null, JSON.stringify(clash.labels),
-      clash.createdAt, clash.modifiedDate ?? null,
-      clash.creationAuthor ?? null, clash.linearIssueId ?? null,
+      clash.guid,
+      clash.id,
+      clash.title,
+      clash.description,
+      clash.status,
+      clash.priority,
+      clash.ruleId,
+      clash.ifcGuidA,
+      clash.ifcGuidB,
+      clash.fileA,
+      clash.fileB,
+      JSON.stringify(clash.midpoint),
+      JSON.stringify(clash.viewpoint),
+      clash.assignee ?? null,
+      JSON.stringify(clash.labels),
+      clash.createdAt,
+      clash.modifiedDate ?? null,
+      clash.creationAuthor ?? null,
+      clash.linearIssueId ?? null,
     ],
   );
 }
 
-export async function updateClash(guid: string, patch: Partial<Clash>): Promise<void> {
+export async function updateClash(
+  guid: string,
+  patch: Partial<Clash>,
+): Promise<void> {
   const fieldMap: Record<string, string> = {
     title: "title",
     description: "description",
@@ -187,7 +222,9 @@ export async function updateClash(guid: string, patch: Partial<Clash>): Promise<
 }
 
 export async function deleteClash(guid: string): Promise<boolean> {
-  const result = await pool.query("DELETE FROM clashes WHERE guid = $1", [guid]);
+  const result = await pool.query("DELETE FROM clashes WHERE guid = $1", [
+    guid,
+  ]);
   return (result.rowCount ?? 0) > 0;
 }
 
@@ -195,8 +232,14 @@ export async function deleteAllClashes(): Promise<void> {
   await pool.query("DELETE FROM clashes");
 }
 
-export async function setClashLinearIssueId(guid: string, linearIssueId: string): Promise<void> {
-  await pool.query("UPDATE clashes SET linear_issue_id = $1, modified_at = now() WHERE guid = $2", [linearIssueId, guid]);
+export async function setClashLinearIssueId(
+  guid: string,
+  linearIssueId: string,
+): Promise<void> {
+  await pool.query(
+    "UPDATE clashes SET linear_issue_id = $1, modified_at = now() WHERE guid = $2",
+    [linearIssueId, guid],
+  );
 }
 
 // ── Activity ─────────────────────────────────────────────────────────────────
@@ -210,17 +253,29 @@ export async function getActivity(clashGuid: string): Promise<ActivityEntry[]> {
   );
   return rows.map((r) => ({
     ...r,
-    timestamp: r.timestamp instanceof Date ? r.timestamp.toISOString() : r.timestamp,
+    timestamp:
+      r.timestamp instanceof Date ? r.timestamp.toISOString() : r.timestamp,
   }));
 }
 
-export async function addActivity(entry: Omit<ActivityEntry, "id">): Promise<ActivityEntry> {
+export async function addActivity(
+  entry: Omit<ActivityEntry, "id">,
+): Promise<ActivityEntry> {
   const id = crypto.randomUUID();
   await pool.query(
     `INSERT INTO activity (id, clash_guid, type, actor, timestamp, field, from_value, to_value, body)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [id, entry.clashGuid, entry.type, entry.actor, entry.timestamp,
-     entry.field ?? null, entry.from ?? null, entry.to ?? null, entry.body ?? null],
+    [
+      id,
+      entry.clashGuid,
+      entry.type,
+      entry.actor,
+      entry.timestamp,
+      entry.field ?? null,
+      entry.from ?? null,
+      entry.to ?? null,
+      entry.body ?? null,
+    ],
   );
   return { id, ...entry };
 }
@@ -240,11 +295,14 @@ export async function getComments(clashGuid: string): Promise<Comment[]> {
   );
   return rows.map((r) => ({
     ...r,
-    timestamp: r.timestamp instanceof Date ? r.timestamp.toISOString() : r.timestamp,
+    timestamp:
+      r.timestamp instanceof Date ? r.timestamp.toISOString() : r.timestamp,
   }));
 }
 
-export async function addComment(comment: Omit<Comment, "id">): Promise<Comment> {
+export async function addComment(
+  comment: Omit<Comment, "id">,
+): Promise<Comment> {
   const id = crypto.randomUUID();
   await pool.query(
     `INSERT INTO comments (id, clash_guid, actor, timestamp, body)
@@ -269,7 +327,10 @@ export async function getSnapshot(clashGuid: string): Promise<string | null> {
   return rows[0]?.snapshot_path ?? null;
 }
 
-export async function setSnapshot(clashGuid: string, snapshotPath: string): Promise<void> {
+export async function setSnapshot(
+  clashGuid: string,
+  snapshotPath: string,
+): Promise<void> {
   await pool.query(
     `INSERT INTO snapshots (clash_guid, snapshot_path, generated_at)
      VALUES ($1, $2, now())
@@ -278,38 +339,66 @@ export async function setSnapshot(clashGuid: string, snapshotPath: string): Prom
   );
 }
 
-export async function getAllSnapshots(): Promise<Array<{ clashGuid: string; snapshotPath: string }>> {
-  const { rows } = await pool.query("SELECT clash_guid, snapshot_path FROM snapshots");
-  return rows.map((r) => ({ clashGuid: r.clash_guid, snapshotPath: r.snapshot_path }));
+export async function getAllSnapshots(): Promise<
+  Array<{ clashGuid: string; snapshotPath: string }>
+> {
+  const { rows } = await pool.query(
+    "SELECT clash_guid, snapshot_path FROM snapshots",
+  );
+  return rows.map((r) => ({
+    clashGuid: r.clash_guid,
+    snapshotPath: r.snapshot_path,
+  }));
 }
 
 // ── IFC Models ───────────────────────────────────────────────────────────────
 
 export async function listIfcModels(): Promise<IfcModel[]> {
-  const { rows } = await pool.query("SELECT * FROM ifc_models ORDER BY uploaded_at ASC");
+  const { rows } = await pool.query(
+    "SELECT * FROM ifc_models ORDER BY uploaded_at ASC",
+  );
   return rows.map((r) => ({
     filename: r.filename,
     displayName: r.display_name,
-    uploadedAt: r.uploaded_at instanceof Date ? r.uploaded_at.toISOString() : r.uploaded_at,
+    uploadedAt:
+      r.uploaded_at instanceof Date
+        ? r.uploaded_at.toISOString()
+        : r.uploaded_at,
     elementCount: r.element_count,
-    parsedAt: r.parsed_at ? (r.parsed_at instanceof Date ? r.parsed_at.toISOString() : r.parsed_at) : null,
+    parsedAt: r.parsed_at
+      ? r.parsed_at instanceof Date
+        ? r.parsed_at.toISOString()
+        : r.parsed_at
+      : null,
   }));
 }
 
 export async function getIfcModel(filename: string): Promise<IfcModel | null> {
-  const { rows } = await pool.query("SELECT * FROM ifc_models WHERE filename = $1", [filename]);
+  const { rows } = await pool.query(
+    "SELECT * FROM ifc_models WHERE filename = $1",
+    [filename],
+  );
   if (rows.length === 0) return null;
   const r = rows[0];
   return {
     filename: r.filename,
     displayName: r.display_name,
-    uploadedAt: r.uploaded_at instanceof Date ? r.uploaded_at.toISOString() : r.uploaded_at,
+    uploadedAt:
+      r.uploaded_at instanceof Date
+        ? r.uploaded_at.toISOString()
+        : r.uploaded_at,
     elementCount: r.element_count,
-    parsedAt: r.parsed_at ? (r.parsed_at instanceof Date ? r.parsed_at.toISOString() : r.parsed_at) : null,
+    parsedAt: r.parsed_at
+      ? r.parsed_at instanceof Date
+        ? r.parsed_at.toISOString()
+        : r.parsed_at
+      : null,
   };
 }
 
-export async function upsertIfcModel(model: Omit<IfcModel, "elementCount" | "parsedAt">): Promise<void> {
+export async function upsertIfcModel(
+  model: Omit<IfcModel, "elementCount" | "parsedAt">,
+): Promise<void> {
   await pool.query(
     `INSERT INTO ifc_models (filename, display_name, uploaded_at, element_count, parsed_at)
      VALUES ($1, $2, $3, 0, NULL)
@@ -318,7 +407,10 @@ export async function upsertIfcModel(model: Omit<IfcModel, "elementCount" | "par
   );
 }
 
-export async function markIfcModelParsed(filename: string, elementCount: number): Promise<void> {
+export async function markIfcModelParsed(
+  filename: string,
+  elementCount: number,
+): Promise<void> {
   await pool.query(
     "UPDATE ifc_models SET parsed_at = now(), element_count = $1 WHERE filename = $2",
     [elementCount, filename],
@@ -340,11 +432,16 @@ function rowToElement(r: Record<string, unknown>): IfcElement {
     ifcType: r.ifc_type as string,
     name: (r.name as string | null) ?? null,
     description: (r.description as string | null) ?? null,
-    properties: typeof r.properties === "string" ? r.properties : JSON.stringify(r.properties),
+    properties:
+      typeof r.properties === "string"
+        ? r.properties
+        : JSON.stringify(r.properties),
   };
 }
 
-export async function getElementsForModel(modelFilename: string): Promise<IfcElement[]> {
+export async function getElementsForModel(
+  modelFilename: string,
+): Promise<IfcElement[]> {
   const { rows } = await pool.query(
     "SELECT * FROM ifc_elements WHERE model_filename = $1 ORDER BY express_id ASC",
     [modelFilename],
@@ -352,7 +449,9 @@ export async function getElementsForModel(modelFilename: string): Promise<IfcEle
   return rows.map(rowToElement);
 }
 
-export async function getElementByGlobalId(globalId: string): Promise<IfcElement | null> {
+export async function getElementByGlobalId(
+  globalId: string,
+): Promise<IfcElement | null> {
   const { rows } = await pool.query(
     "SELECT * FROM ifc_elements WHERE global_id = $1 LIMIT 1",
     [globalId],
@@ -374,13 +473,22 @@ export async function replaceElementsForModel(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("DELETE FROM ifc_elements WHERE model_filename = $1", [modelFilename]);
+    await client.query("DELETE FROM ifc_elements WHERE model_filename = $1", [
+      modelFilename,
+    ]);
     for (const el of elements) {
       await client.query(
         `INSERT INTO ifc_elements (model_filename, express_id, global_id, ifc_type, name, description, properties)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [el.modelFilename, el.expressId, el.globalId, el.ifcType,
-         el.name, el.description, el.properties],
+        [
+          el.modelFilename,
+          el.expressId,
+          el.globalId,
+          el.ifcType,
+          el.name,
+          el.description,
+          el.properties,
+        ],
       );
     }
     await client.query("COMMIT");
@@ -396,7 +504,11 @@ export async function replaceElementsForModel(
 
 function deriveRuleIdFromFiles(fileA: string, fileB: string): string {
   const stem = (f: string) => {
-    const base = f.replace(/\.ifc$/i, "").split(/[_\-.]+/).pop() ?? f;
+    const base =
+      f
+        .replace(/\.ifc$/i, "")
+        .split(/[_\-.]+/)
+        .pop() ?? f;
     return base.toUpperCase();
   };
   const a = stem(fileA);
@@ -426,9 +538,10 @@ export async function backfillClashFiles(): Promise<void> {
     const fileA = aRes.rows[0]?.model_filename ?? "";
     const fileB = bRes.rows[0]?.model_filename ?? "";
     if (fileA || fileB) {
-      const ruleId = (row.rule_id && row.rule_id !== "UNKNOWN" && row.rule_id !== "Clash")
-        ? row.rule_id
-        : deriveRuleIdFromFiles(fileA, fileB) || row.rule_id;
+      const ruleId =
+        row.rule_id && row.rule_id !== "UNKNOWN" && row.rule_id !== "Clash"
+          ? row.rule_id
+          : deriveRuleIdFromFiles(fileA, fileB) || row.rule_id;
       await pool.query(
         "UPDATE clashes SET file_a = $1, file_b = $2, rule_id = $3 WHERE guid = $4",
         [fileA, fileB, ruleId, row.guid],
@@ -453,7 +566,9 @@ export async function getLinearSettings(): Promise<LinearSettings | null> {
   };
 }
 
-export async function saveLinearSettings(settings: LinearSettings): Promise<void> {
+export async function saveLinearSettings(
+  settings: LinearSettings,
+): Promise<void> {
   await pool.query(
     `INSERT INTO linear_settings (id, access_token, workspace_id, team_id, project_id)
      VALUES (1, $1, $2, $3, $4)
@@ -462,6 +577,11 @@ export async function saveLinearSettings(settings: LinearSettings): Promise<void
        workspace_id = EXCLUDED.workspace_id,
        team_id      = EXCLUDED.team_id,
        project_id   = EXCLUDED.project_id`,
-    [settings.accessToken, settings.workspaceId, settings.teamId, settings.projectId],
+    [
+      settings.accessToken,
+      settings.workspaceId,
+      settings.teamId,
+      settings.projectId,
+    ],
   );
 }

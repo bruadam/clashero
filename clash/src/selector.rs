@@ -40,10 +40,17 @@ impl Selector {
             let guid = &query_val[1..];
             el.metadata.guid == guid
         } else {
-            // Otherwise, treat it as an IFC type (case-insensitive)
-            let query_upper = query_val.to_uppercase();
+            // Pipe-separated alternatives: "IfcBeam|IfcColumn" → match either
             let el_type_upper = el.metadata.ifc_type.to_uppercase();
-            el_type_upper == query_upper
+            query_val.split('|').any(|part| {
+                let part = part.trim().to_uppercase();
+                if part.ends_with('*') {
+                    // Prefix wildcard: "IfcDuct*" → matches IfcDuctSegment, IfcDuctFitting, etc.
+                    el_type_upper.starts_with(&part[..part.len() - 1])
+                } else {
+                    el_type_upper == part
+                }
+            })
         };
 
         if is_exclusion { !matched } else { matched }

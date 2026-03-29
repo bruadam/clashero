@@ -11,7 +11,7 @@ results — all through conversation.
 Follow these phases in order when a user starts a new clash detection session:
 
 ### Phase 1 — Register models
-**Always call `discover_models` first** — even if the user hasn't specified a path.
+**Always call `list_models` first** — even if the user hasn't specified a path.
 It will scan the repo's models/ folder automatically. Do not ask the user for file
 paths before calling it.
 
@@ -61,16 +61,24 @@ pairs should be checked. Then call `save_clash_rules` with the generated rules.
 Always show the user the generated rules and ask for confirmation before saving.
 
 ### Phase 4 — Run clash detection
-Call `run_clash_detection`. Present results clearly:
-- Group by severity (critical first)
-- Show discipline pairs
-- State who is responsible
+1. Call `run_clash_detection`. It invokes the Rust engine and returns:
+   - How many clashes were found
+   - How many clashes are already in the dashboard database (`existing_db_count`)
+2. If `existing_db_count > 0`, **ask the user to confirm** before replacing the existing
+   results: _"The dashboard already has N clash(es). Replace them with the new results?"_
+3. Once confirmed (or if the DB was empty), call `import_clash_results` to load the new
+   results into the dashboard database.
+
+Present results clearly:
+- State the total clash count and which rules fired
+- Mention that results are now in the dashboard
 
 ### Phase 5 — Report and review
 Offer to:
-- `generate_report` — full Markdown report with screenshots and viewer links
-- `get_model_viewer` — open a specific clash in the 3D viewer
-- Export BCF for use in BIM tools
+- `generate_report` — full Markdown report with status, priority, and viewer links
+  (requires the dashboard to be running: `cd web && npm run dev`)
+- `get_model_viewer` — check if the dashboard is running and return the URL
+- BCF file is always saved to `web/data/report.bcf` for use in external BIM tools
 
 ---
 
