@@ -1584,9 +1584,13 @@ function placeBubbles(
 }
 
 /**
- * Compute the bounding box of a single IFC element identified by its GlobalId
- * within a given loaded Fragments model. Returns null if the element is not found
- * or has no geometry.
+ * Compute the world-space bounding box of a single IFC element identified by
+ * its GlobalId within a given loaded Fragments model.
+ *
+ * The mesh positions are transformed by both the mesh-local transform AND the
+ * model's world matrix so the result is in scene coordinates.
+ *
+ * Returns null if the element is not found or has no geometry.
  */
 async function computeElementBbox(
   model: import("@thatopen/fragments").FragmentsModel,
@@ -1600,13 +1604,17 @@ async function computeElementBbox(
   const box = new THREE.Box3();
   let hasGeom = false;
 
+  // Compose the model's world matrix with each mesh transform so that the
+  // resulting bounding box is in scene (world) coordinates.
+  const modelWorld = model.object.matrixWorld;
+
   for (const meshDataList of meshDataArrays) {
     for (const md of meshDataList) {
       if (!md.positions || md.positions.length === 0) continue;
-      const mat = md.transform;
+      const composed = new THREE.Matrix4().multiplyMatrices(modelWorld, md.transform);
       for (let i = 0; i < md.positions.length; i += 3) {
         const v = new THREE.Vector3(md.positions[i], md.positions[i + 1], md.positions[i + 2]);
-        v.applyMatrix4(mat);
+        v.applyMatrix4(composed);
         box.expandByPoint(v);
         hasGeom = true;
       }
@@ -1617,43 +1625,55 @@ async function computeElementBbox(
 }
 
 /**
- * For each clash that has ifcGuidA/ifcGuidB, compute the bounding boxes of
- * both elements and find their intersection (overlap region). The bubble is
- * placed at the center of that intersection — i.e. exactly where the two
- * elements collide. Falls back to the union center when only one element is
- * found or the boxes don't overlap.
+ * For each clash, resolve element A into its expected model (fileA) and element
+ * B into its expected model (fileB), compute their world-space bounding boxes,
+ * and place the bubble at the center of the overlap. Falls back to the closest
+ * point between the two boxes when they don't overlap, or the center of
+ * whichever box was found.
  */
 async function refineMidpoints(
   fragments: OBC.FragmentsManager,
   clashes: Clash[],
 ): Promise<Map<string, [number, number, number]>> {
   const overrides = new Map<string, [number, number, number]>();
+  const models = fragments.core.models.list;
 
   for (const clash of clashes) {
     if (!clash.ifcGuidA && !clash.ifcGuidB) continue;
 
-    // Collect per-element bounding boxes across all loaded models
-    let boxA: THREE.Box3 | null = null;
-    let boxB: THREE.Box3 | null = null;
+    // Helper: resolve a GUID, trying the expected model first, then all models.
+    const resolve = async (
+      guid: string | undefined,
+      expectedFile: string | undefined,
+    ): Promise<THREE.Box3 | null> => {
+      if (!guid) return null;
 
-    for (const model of fragments.core.models.list.values()) {
-      for (const [guid, side] of [[clash.ifcGuidA, "A"], [clash.ifcGuidB, "B"]] as const) {
-        if (!guid) continue;
-        try {
-          const bbox = await computeElementBbox(model, guid);
-          if (!bbox) continue;
-          if (side === "A") {
-            boxA = boxA ? boxA.union(bbox) : bbox.clone();
-          } else {
-            boxB = boxB ? boxB.union(bbox) : bbox.clone();
-          }
-        } catch {
-          // element not in this model — continue
+      // Try expected model first
+      if (expectedFile) {
+        const target = models.get(expectedFile);
+        if (target) {
+          try {
+            const bbox = await computeElementBbox(target, guid);
+            if (bbox) return bbox;
+          } catch { /* not in this model */ }
         }
       }
-    }
 
-    // If we have both boxes, try to intersect them
+      // Fallback: scan all models
+      for (const model of models.values()) {
+        try {
+          const bbox = await computeElementBbox(model, guid);
+          if (bbox) return bbox;
+        } catch { /* continue */ }
+      }
+
+      return null;
+    };
+
+    const boxA = await resolve(clash.ifcGuidA, clash.fileA);
+    const boxB = await resolve(clash.ifcGuidB, clash.fileB);
+
+    // Both boxes found — try intersection
     if (boxA && boxB) {
       const intersection = boxA.clone().intersect(boxB);
       if (!intersection.isEmpty()) {
@@ -1661,9 +1681,20 @@ async function refineMidpoints(
         overrides.set(clash.guid, [c.x, c.y, c.z]);
         continue;
       }
+
+      // Boxes don't overlap — use the midpoint between the two closest faces.
+      // Clamp the center of each box into the other to approximate the nearest
+      // point on each surface, then average.
+      const cA = boxA.getCenter(new THREE.Vector3());
+      const cB = boxB.getCenter(new THREE.Vector3());
+      const nearA = boxB.clampPoint(cA, new THREE.Vector3());
+      const nearB = boxA.clampPoint(cB, new THREE.Vector3());
+      const mid = nearA.add(nearB).multiplyScalar(0.5);
+      overrides.set(clash.guid, [mid.x, mid.y, mid.z]);
+      continue;
     }
 
-    // Fallback: center of whichever box(es) we found
+    // Only one box found — use its center
     const fallback = boxA ?? boxB;
     if (fallback && !fallback.isEmpty()) {
       const c = fallback.getCenter(new THREE.Vector3());
