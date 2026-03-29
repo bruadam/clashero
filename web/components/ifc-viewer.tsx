@@ -312,6 +312,12 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
         opacity: 1,
         transparent: false,
       });
+      highlighter.styles.set("ghost", {
+        color: new THREE.Color(0x888888),
+        renderedFaces: FRAGS_Init.RenderedFaces.TWO,
+        opacity: 0.15,
+        transparent: true,
+      });
 
       // Classify models as they load so Hider & Classifier work immediately
       fragments.core.onModelLoaded.add(async () => {
@@ -505,6 +511,7 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
           const hl = highlighter as any;
           if (hl.selection?.clashA) hl.selection.clashA = {};
           if (hl.selection?.clashB) hl.selection.clashB = {};
+          if (hl.selection?.ghost) hl.selection.ghost = {};
           await hl.updateColors?.();
         } catch { /* ignore if not yet ready */ }
       }
@@ -585,37 +592,37 @@ export function IfcViewer({ selectedClash, clashes, theme, models, colorizeBy: c
           });
         }
 
-        // Ghost all models, then restore opacity for clashing elements
+        // Build ghost map: all elements EXCEPT the clashing ones
+        const ghostMap: OBC.ModelIdMap = {};
         for (const model of fragments!.core.models.list.values()) {
           if (cancelled) return;
           try {
-            await model.setOpacity(undefined, 0.06);
-          } catch {
-            ghostModel(model.object, 0.06);
-          }
-        }
-
-        // Restore full opacity for clashing elements
-        for (const [modelId, idSet] of Object.entries(clashMapA)) {
-          const model = fragments!.core.models.list.get(modelId);
-          if (model) {
-            try { await model.setOpacity([...idSet], 1); } catch { /* skip */ }
-          }
-        }
-        for (const [modelId, idSet] of Object.entries(clashMapB)) {
-          const model = fragments!.core.models.list.get(modelId);
-          if (model) {
-            try { await model.setOpacity([...idSet], 1); } catch { /* skip */ }
-          }
+            const allIds = await model.getLocalIds();
+            const clashIdsA = clashMapA[model.modelId];
+            const clashIdsB = clashMapB[model.modelId];
+            const ghostIds = new Set<number>();
+            for (const id of allIds) {
+              if (clashIdsA?.has(id) || clashIdsB?.has(id)) continue;
+              ghostIds.add(id);
+            }
+            if (ghostIds.size > 0) {
+              ghostMap[model.modelId] = ghostIds;
+            }
+          } catch { /* skip models that don't support getLocalIds */ }
         }
 
         if (cancelled) return;
 
-        // Apply highlight colors via the Highlighter component
-        if (highlighter) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const hl = highlighter as any;
+        // Apply ghost + clash highlights via the Highlighter component
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hl = highlighter as any;
+        if (hl) {
           try {
+            // Ghost non-clashing elements
+            if (Object.keys(ghostMap).length > 0) {
+              await hl.highlightByID("ghost", ghostMap, true);
+            }
+            // Highlight clash elements
             if (Object.keys(clashMapA).length > 0) {
               await hl.highlightByID("clashA", clashMapA, true);
             }
@@ -1714,14 +1721,6 @@ function fixZFighting(obj: THREE.Object3D) {
       m.polygonOffsetFactor = 1;
       m.polygonOffsetUnits = 1;
     });
-  });
-}
-
-function ghostModel(obj: THREE.Object3D, opacity: number) {
-  obj.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    const mats = Array.isArray(child.material) ? child.material : [child.material];
-    mats.forEach((m) => { m.transparent = true; m.opacity = opacity; m.needsUpdate = true; });
   });
 }
 
