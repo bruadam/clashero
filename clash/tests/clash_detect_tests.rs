@@ -41,7 +41,7 @@ fn test_clash_detect_hvac_structural() {
             "Clash {}: {} at {:?}",
             i + 1,
             clash.description,
-            clash.position
+            clash.p1
         );
         assert!(!clash.guid_a.is_empty());
         assert!(!clash.guid_b.is_empty());

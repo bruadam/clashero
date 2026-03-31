@@ -1,10 +1,16 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
-use clash::bcf_reporter::generate_bcf;
+use clap::{Parser, Subcommand, ValueEnum};
+use clash::bcf_reporter::{generate_bcf, generate_json};
 use clash::clash_detect_with_config;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
+
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum, Debug)]
+enum OutputFormat {
+    Bcf,
+    Json,
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -29,9 +35,13 @@ enum Commands {
         #[arg(short, long, default_value_t = 0.0)]
         tolerance: f64,
 
-        /// Output path for the BCF report
+        /// Output path for the report
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Output format (default: bcf if output ends in .bcf or .bcfzip, else json)
+        #[arg(long, value_enum)]
+        output_format: Option<OutputFormat>,
 
         /// Filter discipline A
         #[arg(long)]
@@ -52,6 +62,7 @@ fn main() -> Result<()> {
             clash_set,
             tolerance,
             output,
+            output_format,
             discipline_a,
             discipline_b,
         } => {
@@ -88,9 +99,28 @@ fn main() -> Result<()> {
             println!("Execution Time: {:?}", duration);
 
             if let Some(out) = output {
-                println!("Generating BCF report: {:?}", out);
-                generate_bcf(out, &clash_infos)?;
-                println!("BCF report generated successfully.");
+                // Determine output format
+                let fmt = output_format.unwrap_or_else(|| {
+                    let name = out.to_string_lossy().to_lowercase();
+                    if name.ends_with(".bcf") || name.ends_with(".bcfzip") {
+                        OutputFormat::Bcf
+                    } else {
+                        OutputFormat::Json
+                    }
+                });
+
+                match fmt {
+                    OutputFormat::Bcf => {
+                        println!("Generating BCF report: {:?}", out);
+                        generate_bcf(out, &clash_infos)?;
+                        println!("BCF report generated successfully.");
+                    }
+                    OutputFormat::Json => {
+                        println!("Generating JSON report: {:?}", out);
+                        generate_json(out, &clash_infos)?;
+                        println!("JSON report generated successfully.");
+                    }
+                }
             }
         }
     }

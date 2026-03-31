@@ -126,3 +126,33 @@ fn test_cli_detect_with_discipline_filtering() {
         .success()
         .stdout(predicate::str::contains("Total Clashes:"));
 }
+
+#[test]
+fn test_cli_detect_with_json_output() {
+    let mut cmd = Command::cargo_bin("clash").unwrap();
+    let ifc_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("models")
+        .join("AC20-FZK-Haus.ifc");
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let json_path = temp_dir.path().join("report.json");
+
+    cmd.arg("detect")
+        .arg("--file")
+        .arg(ifc_path)
+        .arg("--output")
+        .arg(&json_path)
+        .arg("--output-format")
+        .arg("json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Generating JSON report"))
+        .stdout(predicate::str::contains("JSON report generated successfully."));
+
+    assert!(json_path.exists());
+
+    let content = std::fs::read_to_string(&json_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&content).expect("Should be valid JSON");
+    assert!(parsed.is_array(), "JSON output should be an array");
+}

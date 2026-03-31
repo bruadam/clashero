@@ -12,10 +12,14 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfcMetadata {
     pub guid: String,
+    pub name: String,
     pub ifc_type: String,
+    pub description: Option<String>,
+    pub object_type: Option<String>,
     pub discipline: String,
     pub properties: HashMap<String, String>,
     pub length_unit: String,
+    pub source_file: String,
 }
 
 /// Represents an extracted IFC element with its geometry and metadata.
@@ -123,16 +127,33 @@ fn extract_basic_metadata(
                     AttributeValue::String(s) => s.clone(),
                     _ => format!("{:?}", guid_attr).trim_matches('"').to_string(),
                 };
+                let name = match decoded.attributes.get(2) {
+                    Some(AttributeValue::String(s)) => s.clone(),
+                    Some(AttributeValue::Enum(s)) => s.clone(),
+                    _ => String::new(),
+                };
+                let description = match decoded.attributes.get(3) {
+                    Some(AttributeValue::String(s)) => Some(s.clone()),
+                    _ => None,
+                };
+                let object_type = match decoded.attributes.get(4) {
+                    Some(AttributeValue::String(s)) => Some(s.clone()),
+                    _ => None,
+                };
                 let discipline = identify_discipline(&format!("{:?}", decoded.ifc_type));
 
                 metadata_map.insert(
                     id as u64,
                     IfcMetadata {
                         guid,
+                        name,
                         ifc_type: type_name.to_string(),
+                        description,
+                        object_type,
                         discipline,
                         properties: HashMap::new(),
                         length_unit: "".to_string(),
+                        source_file: String::new(),
                     },
                 );
             }
@@ -151,12 +172,18 @@ pub fn load_ifc_elements<P: AsRef<Path>>(path: P) -> Result<Vec<IfcElement>> {
     let content = fs::read_to_string(path.as_ref())
         .with_context(|| format!("Failed to read IFC file at {:?}", path.as_ref()))?;
 
+    let source_file = path.as_ref().to_string_lossy().into_owned();
+
     let mut decoder = EntityDecoder::new(&content);
     let mut scanner = EntityScanner::new(&content);
     let router = GeometryRouter::new();
     let (mut metadata_map, pset_relationships, _) =
         extract_basic_metadata(&mut decoder, &mut scanner);
     extract_properties(&mut decoder, pset_relationships, &mut metadata_map);
+
+    for meta in metadata_map.values_mut() {
+        meta.source_file = source_file.clone();
+    }
 
     // Geometry generation pass (Second full pass, but reused content/decoder)
     let mut elements = Vec::new();
@@ -204,11 +231,17 @@ pub fn load_ifc_metadata<P: AsRef<Path>>(path: P) -> Result<HashMap<u64, IfcMeta
     let content = fs::read_to_string(path.as_ref())
         .with_context(|| format!("Failed to read IFC file at {:?}", path.as_ref()))?;
 
+    let source_file = path.as_ref().to_string_lossy().into_owned();
+
     let mut decoder = EntityDecoder::new(&content);
     let mut scanner = EntityScanner::new(&content);
     let (mut metadata_map, pset_relationships, _) =
         extract_basic_metadata(&mut decoder, &mut scanner);
     extract_properties(&mut decoder, pset_relationships, &mut metadata_map);
+
+    for meta in metadata_map.values_mut() {
+        meta.source_file = source_file.clone();
+    }
 
     Ok(metadata_map)
 }

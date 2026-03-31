@@ -126,3 +126,51 @@ fn test_load_real_ifc_model() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_metadata_name_extraction() -> Result<()> {
+    let mut file = NamedTempFile::new()?;
+    writeln!(file, "ISO-10303-21;")?;
+    writeln!(file, "HEADER;")?;
+    writeln!(file, "ENDSEC;")?;
+    writeln!(file, "DATA;")?;
+    // IFC attributes: [0]=GUID, [1]=OwnerHistory, [2]=Name, [3]=Description
+    writeln!(file, "#1=IFCWALL('GUID_WALL',$,'MyWallName','WallDescription',$,$,$,$);")?;
+    writeln!(file, "ENDSEC;")?;
+    writeln!(file, "END-ISO-10303-21;")?;
+
+    let metadata = load_ifc_metadata(file.path())?;
+    let wall = metadata.get(&1).expect("Wall metadata should exist");
+
+    assert_eq!(wall.name, "MyWallName", "Name should be extracted from attribute[2]");
+    assert_eq!(
+        wall.description.as_deref(),
+        Some("WallDescription"),
+        "Description should be extracted from attribute[3]"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_metadata_source_file() -> Result<()> {
+    let mut file = NamedTempFile::new()?;
+    writeln!(file, "ISO-10303-21;")?;
+    writeln!(file, "HEADER;")?;
+    writeln!(file, "ENDSEC;")?;
+    writeln!(file, "DATA;")?;
+    writeln!(file, "#1=IFCWALL('GUID_WALL',$,$,$,$,$,$,$);")?;
+    writeln!(file, "ENDSEC;")?;
+    writeln!(file, "END-ISO-10303-21;")?;
+
+    let path = file.path().to_string_lossy().into_owned();
+    let metadata = load_ifc_metadata(file.path())?;
+    let wall = metadata.get(&1).expect("Wall metadata should exist");
+
+    assert_eq!(
+        wall.source_file, path,
+        "source_file should match the path argument"
+    );
+
+    Ok(())
+}

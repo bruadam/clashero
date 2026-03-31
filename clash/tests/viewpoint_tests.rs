@@ -1,21 +1,45 @@
-use clash::bcf_reporter::{ClashInfo, generate_bcf};
+use clash::bcf_reporter::{ClashInfo, ClashType, generate_bcf};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use tempfile::tempdir;
 use zip::ZipArchive;
+
+fn make_viewpoint_clash(p1: [f64; 3], camera_eye: Option<[f64; 3]>) -> ClashInfo {
+    ClashInfo {
+        clash_id: "GUID_A-GUID_B".to_string(),
+        clash_set_name: "ViewTest".to_string(),
+        guid_a: "GUID_A".to_string(),
+        name_a: "ElemA".to_string(),
+        ifc_type_a: "IfcWall".to_string(),
+        description_a: None,
+        discipline_a: "Structural".to_string(),
+        source_file_a: "a.ifc".to_string(),
+        properties_a: HashMap::new(),
+        guid_b: "GUID_B".to_string(),
+        name_b: "ElemB".to_string(),
+        ifc_type_b: "IfcDuctSegment".to_string(),
+        description_b: None,
+        discipline_b: "MEP".to_string(),
+        source_file_b: "b.ifc".to_string(),
+        properties_b: HashMap::new(),
+        p1,
+        p2: p1,
+        distance: -0.05,
+        penetration_depth: 0.05,
+        penetration_volume: 0.001,
+        clash_type: ClashType::Hard,
+        camera_eye,
+        description: "Test clash".to_string(),
+    }
+}
 
 #[test]
 fn test_viewpoint_calculation() {
     let temp_dir = tempdir().unwrap();
     let bcf_path = temp_dir.path().join("viewpoint_test.bcfzip");
 
-    let clash = ClashInfo {
-        guid_a: "GUID_A".to_string(),
-        guid_b: "GUID_B".to_string(),
-        description: "Test clash".to_string(),
-        position: [10.0, 10.0, 10.0],
-        camera_eye: Some([0.0, 0.0, 0.0]),
-    };
+    let clash = make_viewpoint_clash([10.0, 10.0, 10.0], Some([0.0, 0.0, 0.0]));
 
     generate_bcf(&bcf_path, &[clash]).expect("Failed to generate BCF");
 
@@ -60,13 +84,7 @@ fn test_viewpoint_calculation_default() {
     let temp_dir = tempdir().unwrap();
     let bcf_path = temp_dir.path().join("viewpoint_default.bcfzip");
 
-    let clash = ClashInfo {
-        guid_a: "GUID_A".to_string(),
-        guid_b: "GUID_B".to_string(),
-        description: "Test clash".to_string(),
-        position: [10.0, 10.0, 10.0],
-        camera_eye: None,
-    };
+    let clash = make_viewpoint_clash([10.0, 10.0, 10.0], None);
 
     generate_bcf(&bcf_path, &[clash]).expect("Failed to generate BCF");
 

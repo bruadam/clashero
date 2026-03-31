@@ -28,6 +28,15 @@ impl Selector {
             return true;
         }
 
+        // "IfcElement" alias: all elements whose type does NOT start with "IfcFeature"
+        if self.query.eq_ignore_ascii_case("IfcElement") {
+            return !el
+                .metadata
+                .ifc_type
+                .to_uppercase()
+                .starts_with("IFCFEATURE");
+        }
+
         let is_exclusion = self.query.starts_with('!');
         let query_val = if is_exclusion {
             &self.query[1..]
@@ -74,10 +83,14 @@ mod tests {
         IfcElement {
             metadata: IfcMetadata {
                 guid: guid.to_string(),
+                name: String::new(),
                 ifc_type: ifc_type.to_string(),
+                description: None,
+                object_type: None,
                 discipline: "General".to_string(),
                 properties: HashMap::new(),
                 length_unit: "meter".to_string(),
+                source_file: String::new(),
             },
             mesh: TriMesh::new(vertices, indices).expect("Mock mesh should be valid"),
         }
@@ -154,5 +167,23 @@ mod tests {
         let filtered = selector.filter(elements);
 
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_selector_ifc_element_alias() {
+        let el1 = create_mock_element("IfcWall", "guid1");
+        let el2 = create_mock_element("IfcFeatureElementSubtraction", "guid2");
+        let el3 = create_mock_element("IfcOpeningElement", "guid3");
+        let elements = vec![el1, el2, el3];
+
+        let selector = Selector::new("IfcElement");
+        let filtered = selector.filter(elements);
+
+        // Should include IfcWall and IfcOpeningElement but exclude IfcFeatureElement* subtypes
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().any(|e| e.metadata.ifc_type == "IfcWall"));
+        assert!(!filtered
+            .iter()
+            .any(|e| e.metadata.ifc_type == "IfcFeatureElementSubtraction"));
     }
 }
