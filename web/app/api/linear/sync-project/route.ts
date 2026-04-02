@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listClashes, getLinearSettings, setClashLinearIssueId } from "@/lib/db";
+import { listClashes, setClashLinearIssueId } from "@/lib/db";
 import { createIssue, addAttachment } from "@/lib/linear";
+import { getActiveOrganizationId } from "@/lib/tenant-context";
+import { getLinearIntegration } from "@/lib/tenant-store";
 
 export async function POST(req: NextRequest) {
-  const settings = await getLinearSettings();
+  const orgId = await getActiveOrganizationId();
+  const settings = await getLinearIntegration(orgId);
   if (!settings?.accessToken) {
     return NextResponse.json({ error: "Not connected to Linear" }, { status: 400 });
   }
   if (!settings.teamId) {
-    return NextResponse.json({ error: "No Linear team selected — configure in Settings > Linear" }, { status: 400 });
+    return NextResponse.json({ error: "No Linear team selected — configure Linear settings" }, { status: 400 });
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`;

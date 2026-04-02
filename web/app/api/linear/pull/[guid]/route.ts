@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClash, getLinearSettings, updateClash } from "@/lib/db";
+import { getClash, updateClash } from "@/lib/db";
 import { getIssue } from "@/lib/linear";
 import type { ClashStatus } from "@/lib/types";
+import { getActiveOrganizationId } from "@/lib/tenant-context";
+import { getLinearIntegration } from "@/lib/tenant-store";
 
 function mapLinearState(stateName: string): ClashStatus {
   const lower = stateName.toLowerCase();
@@ -25,7 +27,8 @@ export async function POST(
     return NextResponse.json({ error: "Clash is not linked to a Linear issue" }, { status: 400 });
   }
 
-  const settings = await getLinearSettings();
+  const orgId = await getActiveOrganizationId();
+  const settings = await getLinearIntegration(orgId);
   if (!settings?.accessToken) {
     return NextResponse.json({ error: "Not connected to Linear" }, { status: 400 });
   }

@@ -87,3 +87,21 @@ Open Claude Desktop and describe what you want to do in plain language:
 > "I want to run clash detection on my IFC models in C:/models/project"
 
 Claude will guide you through registering models, generating clash rules, running detection, and reviewing results.
+
+## Railway Deployment
+
+Set these environment variables in Railway for the web app + worker:
+
+- `DATABASE_URL`: Postgres connection string (Auth.js + integrations).
+- `AUTH_SECRET`: Auth.js secret (generate with `openssl rand -base64 32`).
+- `AUTH_URL`: Public URL for the app (e.g. `https://clashero.up.railway.app`).
+- `AUTH_TRUST_HOST`: `true` when running behind Railway.
+- `CLASHERO_MASTER_KEY`: Master key for encrypting integration secrets.
+- `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`: Linear OAuth app credentials.
+- `LINEAR_REDIRECT_URI`: `<app-url>/api/integrations/linear/callback`.
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: Google OAuth credentials.
+- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`: GitHub OAuth credentials.
+- `MICROSOFT_ENTRA_CLIENT_ID`, `MICROSOFT_ENTRA_CLIENT_SECRET`, `MICROSOFT_ENTRA_TENANT_ID`: Microsoft Entra credentials.
+- `EMAIL_SERVER`, `EMAIL_FROM`: SMTP connection string and sender for magic link login.
+- `DALUX_API_BASE_URL`: Optional Dalux API base override.
+- `NEXT_PUBLIC_BASE_URL`: Public base URL used in Linear issue links.

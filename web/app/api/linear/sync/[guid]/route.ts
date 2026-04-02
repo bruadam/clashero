@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClash, getLinearSettings, setClashLinearIssueId } from "@/lib/db";
+import { getClash, setClashLinearIssueId } from "@/lib/db";
 import { createIssue, addAttachment, getIssue } from "@/lib/linear";
 import type { Clash } from "@/lib/types";
+import { getActiveOrganizationId } from "@/lib/tenant-context";
+import { getLinearIntegration } from "@/lib/tenant-store";
 
 function buildDescription(clash: Clash, viewerUrl: string): string {
   const lines: string[] = [
@@ -38,12 +40,13 @@ export async function POST(
     return NextResponse.json({ error: "Clash not found" }, { status: 404 });
   }
 
-  const settings = await getLinearSettings();
+  const orgId = await getActiveOrganizationId();
+  const settings = await getLinearIntegration(orgId);
   if (!settings?.accessToken) {
     return NextResponse.json({ error: "Not connected to Linear" }, { status: 400 });
   }
   if (!settings.teamId) {
-    return NextResponse.json({ error: "No Linear team selected — configure in Settings > Linear" }, { status: 400 });
+    return NextResponse.json({ error: "No Linear team selected — configure Linear settings" }, { status: 400 });
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`;
