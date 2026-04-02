@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "node .next/standalone/server.js",
+    "start": "node server.js",
     "lint": "next lint",
     "snapshots": "node scripts/generate-snapshots.mjs",
     "snapshots:guid": "node scripts/generate-snapshots.mjs --guid",
