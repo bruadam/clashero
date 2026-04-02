@@ -1,16 +1,13 @@
-import { auth } from "@/lib/auth";
-import { ensureDefaultOrganization, ensureOrganizationForUser } from "@/lib/tenant-store";
+import { auth0 } from "@/lib/auth0";
+import { ensureOrganizationForAuth0Org } from "@/lib/tenant-store";
 
 export async function getActiveOrganizationId(): Promise<string> {
-  try {
-    const session = await auth();
-    if (session?.user?.id) {
-      const org = await ensureOrganizationForUser(session.user.id, session.user.email);
-      return org.id;
-    }
-  } catch {
+  const session = await auth0.getSession();
+  const orgId = (session?.user as any)?.org_id as string | undefined;
+  if (!orgId) {
+    throw new Error("Missing Auth0 org_id in session (tenant required)");
   }
 
-  const org = await ensureDefaultOrganization();
+  const org = await ensureOrganizationForAuth0Org(orgId);
   return org.id;
 }

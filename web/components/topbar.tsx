@@ -68,7 +68,7 @@ export function Topbar({ activeTab, onTabChange }: TopbarProps) {
             <Moon className="w-4 h-4" />
           )}
         </Button>
-        <Link href="/settings/integrations/linear">
+        <Link href="/app/settings/integrations/linear">
           <Button variant="ghost" size="icon" className="text-muted-foreground" title="Integration settings">
             <Settings2 className="w-4 h-4" />
           </Button>

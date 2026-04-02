@@ -9,6 +9,7 @@ export interface Organization {
   name: string;
   slug: string;
   createdAt: string;
+  auth0OrgId?: string | null;
 }
 
 export interface LinearIntegration {
@@ -111,6 +112,32 @@ export async function ensureOrganizationForUser(userId: string, email?: string |
   } finally {
     client.release();
   }
+}
+
+export async function ensureOrganizationForAuth0Org(auth0OrgId: string): Promise<Organization> {
+  const pool = getPgPool();
+
+  const existing = await pool.query<Organization>(
+    'SELECT id, name, slug, created_at as "createdAt", auth0_org_id as "auth0OrgId" FROM organizations WHERE auth0_org_id = $1 LIMIT 1',
+    [auth0OrgId],
+  );
+  if (existing.rows[0]) return existing.rows[0];
+
+  const now = new Date().toISOString();
+  const org: Organization = {
+    id: crypto.randomUUID(),
+    name: `Org ${auth0OrgId.slice(0, 8)}`,
+    slug: `org-${auth0OrgId.slice(0, 8)}`,
+    createdAt: now,
+    auth0OrgId,
+  };
+
+  await pool.query(
+    "INSERT INTO organizations (id, name, slug, created_at, auth0_org_id) VALUES ($1, $2, $3, $4, $5)",
+    [org.id, org.name, org.slug, org.createdAt, auth0OrgId],
+  );
+
+  return org;
 }
 
 async function getIntegrationRecord(

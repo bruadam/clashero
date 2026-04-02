@@ -13,7 +13,7 @@
     "worker": "node scripts/worker.mjs"
   },
   "dependencies": {
-    "@auth/pg-adapter": "^1.0.7",
+    "@auth0/nextjs-auth0": "^4.16.1",
     "@radix-ui/react-avatar": "latest",
     "@radix-ui/react-dialog": "latest",
     "@radix-ui/react-dropdown-menu": "latest",
@@ -29,9 +29,7 @@
     "@thatopen/components-front": "latest",
     "@thatopen/fragments": "latest",
     "@thatopen/ui": "latest",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/pg": "^8.20.0",
-    "better-sqlite3": "^12.8.0",
     "camera-controls": "^3.1.2",
     "canvas": "^3.2.2",
     "class-variance-authority": "latest",
@@ -40,7 +38,6 @@
     "jszip": "^3.10.0",
     "lucide-react": "latest",
     "next": "^16.2.1",
-    "next-auth": "^5.0.0-beta.30",
     "next-themes": "^0.4.6",
     "nodemailer": "^7.0.13",
     "pg": "^8.20.0",
@@ -56,10 +53,12 @@
     "web-ifc": "^0.0.74"
   },
   "optionalDependencies": {
+    "better-sqlite3": "^12.8.0",
     "gl": "^8.1.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

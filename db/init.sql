@@ -153,8 +153,13 @@ CREATE TABLE IF NOT EXISTS organizations (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   slug        TEXT NOT NULL UNIQUE,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  auth0_org_id TEXT
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS organizations_auth0_org_id_key
+  ON organizations(auth0_org_id)
+  WHERE auth0_org_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS organization_memberships (
   id              TEXT PRIMARY KEY,

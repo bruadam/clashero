@@ -12,16 +12,11 @@ export async function GET() {
   }
 
   const state = crypto.randomUUID();
-  const orgId = await getActiveOrganizationId();
+  await getActiveOrganizationId();
   const url = buildOAuthUrl(CLIENT_ID, REDIRECT_URI, state);
 
   const response = NextResponse.redirect(url);
   response.cookies.set("linear_oauth_state", state, {
-    httpOnly: true,
-    maxAge: 600,
-    path: "/",
-  });
-  response.cookies.set("linear_oauth_org", orgId, {
     httpOnly: true,
     maxAge: 600,
     path: "/",
